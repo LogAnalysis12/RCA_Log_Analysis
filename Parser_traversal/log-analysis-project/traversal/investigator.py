@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from pathlib import Path
 from typing import Any, Callable
 
 from traversal.budget import BudgetExceeded
@@ -12,6 +13,7 @@ from traversal.compact_results import (
     evidence_signature,
 )
 from traversal.critic import run_critic
+from traversal.function_memory import ContextBuilder, FunctionUnderstandingMemory
 from traversal.prompts import INVESTIGATOR_SYSTEM
 from traversal.schemas import InvestigationState
 from traversal.tool_definitions import TOOLS
@@ -65,6 +67,22 @@ def run_investigation(
     config = runtime_config or {}
     anchor = issue["anchor_resolution"]["selected_function"]
     state = InvestigationState(issue=issue, anchor=anchor)
+    memory = None
+    context_builder = None
+    if config.get("function_memory_enabled", True):
+        repo_hint = config.get("repository_id") or config.get("source_root") or anchor.get("relative_path") or "default"
+        repo_path = Path(str(repo_hint))
+        repository_id = str(config.get("repository_id") or repo_path.name or "default")
+        memory = FunctionUnderstandingMemory(
+            config.get("function_memory_path", "output/function_memory.jsonl"),
+            repository_id,
+            max_records=int(config.get("function_memory_max_records", 5000)),
+        )
+        context_builder = ContextBuilder(
+            memory,
+            max_chars=int(config.get("function_memory_chars", 2400)),
+            max_functions=int(config.get("function_memory_max_functions", 6)),
+        )
     backend = backend_factory(system_prompt=INVESTIGATOR_SYSTEM, tools=TOOLS)
     repeats: Counter[str] = Counter()
     reviewed: dict[str, frozenset[str]] = {}
@@ -142,6 +160,8 @@ def run_investigation(
                         state.read_functions[
                             canonical_function_id(result.get("function_id"))
                         ] = result
+                        if memory is not None:
+                            memory.remember_source(result)
 
                 state.tool_history.append(
                     {"step": step_number, "tool": call.name, "input": call.input, "result": result}
@@ -151,6 +171,30 @@ def run_investigation(
                     if config.get("compact_tool_results", True)
                     else result
                 )
+                # Store bounded graph observations only against a function whose source
+                # has already been verified during this run. Do not persist conclusions.
+                memory_function_id = canonical_function_id(
+                    result.get("function_id") or call.input.get("function_id")
+                )
+                source_record = state.read_functions.get(memory_function_id)
+                if memory is not None and source_record and call.name != "read_function_source":
+                    observation = json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)[:360]
+                    memory.remember_source(
+                        source_record,
+                        evidence=[{
+                            "tool": call.name,
+                            "status": result.get("status", "UNKNOWN"),
+                            "observation": observation,
+                            "verified": False,
+                        }],
+                    )
+                if context_builder is not None and memory_function_id:
+                    memory_context = context_builder.build(active_function_id=memory_function_id)
+                    if memory_context:
+                        if isinstance(model_result, str):
+                            model_result = model_result + "\n\n" + memory_context
+                        else:
+                            model_result = {"tool_result": model_result, "reusable_function_memory": memory_context}
                 ordinary_results.append(
                     {
                         "tool_use_id": call.id,

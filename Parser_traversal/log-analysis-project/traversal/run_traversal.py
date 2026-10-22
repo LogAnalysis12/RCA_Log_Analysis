@@ -343,9 +343,16 @@ def main() -> int:
             traversal_config
         )
 
+        traversal_config.setdefault("repository_id", str(config.get("repository_id") or source_root.name))
+        backend_llm_config = dict(llm_config)
+        backend_llm_config["history_config"] = {
+            "enabled": traversal_config.get("conversation_history_compaction_enabled", True),
+            "max_chars": int(traversal_config.get("conversation_history_max_chars", 24000)),
+            "keep_recent_cycles": int(traversal_config.get("conversation_history_keep_recent_cycles", 4)),
+        }
         backend_factory = (
             make_backend_factory(
-                llm_config,
+                backend_llm_config,
                 budget_manager,
                 trace_recorder,
             )

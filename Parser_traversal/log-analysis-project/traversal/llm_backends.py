@@ -27,6 +27,8 @@ No AWS credentials are stored here. Boto3 uses the normal AWS credential chain.
 
 from __future__ import annotations
 
+from traversal.message_history import trim_message_history
+
 import json
 import os
 import uuid
@@ -95,6 +97,7 @@ class BedrockBackend:
         max_tokens: int = 2048,
         temperature: float = 0.0,
         system_prompt: str | None = None,
+        history_config: dict[str, Any] | None = None,
     ) -> None:
         import boto3
         from botocore.config import Config
@@ -114,6 +117,7 @@ class BedrockBackend:
         self.temperature = temperature
         self.system = [{"text": system_prompt}] if system_prompt else None
         self.messages: list[dict[str, Any]] = []
+        self.history_config = history_config or {}
 
     def send(self, user_content: Any) -> StepResult:
         self.messages.append(
@@ -150,6 +154,12 @@ class BedrockBackend:
         return self._call()
 
     def _call(self) -> StepResult:
+        if self.history_config.get("enabled", True):
+            self.messages = trim_message_history(
+                self.messages,
+                max_chars=int(self.history_config.get("max_chars", 24000)),
+                keep_recent_cycles=int(self.history_config.get("keep_recent_cycles", 4)),
+            )
         request: dict[str, Any] = {
             "modelId": self.model,
             "messages": self.messages,
@@ -208,6 +218,7 @@ class LocalOpenAICompatibleBackend:
         max_tokens: int = 2048,
         temperature: float = 0.0,
         system_prompt: str | None = None,
+        history_config: dict[str, Any] | None = None,
         trace_recorder: Any = None,
         stage: str = "unknown",
         http_transport: Any = None,
@@ -242,6 +253,7 @@ class LocalOpenAICompatibleBackend:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.messages: list[dict[str, Any]] = []
+        self.history_config = history_config or {}
         if system_prompt:
             self.messages.append({"role": "system", "content": system_prompt})
 
@@ -272,6 +284,12 @@ class LocalOpenAICompatibleBackend:
         return self._call()
 
     def _call(self) -> StepResult:
+        if self.history_config.get("enabled", True):
+            self.messages = trim_message_history(
+                self.messages,
+                max_chars=int(self.history_config.get("max_chars", 24000)),
+                keep_recent_cycles=int(self.history_config.get("keep_recent_cycles", 4)),
+            )
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.messages,
@@ -350,6 +368,7 @@ def get_backend(
             max_tokens=max_tokens,
             temperature=temperature,
             system_prompt=system_prompt,
+            history_config=config.get("history_config"),
         )
 
     if provider in {"local", "openai-compatible"}:
@@ -412,6 +431,7 @@ def get_backend(
             max_tokens=max_tokens,
             temperature=temperature,
             system_prompt=system_prompt,
+            history_config=config.get("history_config"),
             trace_recorder=trace_recorder,
             stage=stage,
             http_transport=http_transport,
