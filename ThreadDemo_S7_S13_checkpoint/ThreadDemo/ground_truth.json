@@ -1,0 +1,489 @@
+{
+  "schema_version": "1.0",
+  "log_window_ms": 2000,
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "Variable deleted by another thread (diagram scenario: main-owned var shared by T1 and T2)",
+      "class": "DELETE_RACE",
+      "error_log": {
+        "function": "CWorkerService::q2",
+        "level": "ERROR",
+        "message_regex": "Exception occured: Unknown exception",
+        "min_count": 2
+      },
+      "thread_roots": {
+        "CWorkerService::q2": "CWorkerService::q1",
+        "CResourceOwner::q3": "CResourceOwner::q3"
+      },
+      "must_have_roles": [
+        "victim",
+        "culprit",
+        "alloc",
+        "spawn"
+      ],
+      "expects_cross_thread_evidence": true,
+      "expected_conclusion": "CResourceOwner::q3 (thread T2) deletes var and sets it to nullptr while CWorkerService::q2 (thread T1, via q1) still uses it. var is created in CScenarioRunner::runS1 and passed by std::ref to both threads. No lock or ownership rule protects it. q2 is only the failure site.",
+      "wrong_conclusions": [
+        "root cause is CWorkerService::q2",
+        "the string 'Unknown exception' is the bad value",
+        "a bug inside std::thread"
+      ],
+      "edges": [
+        {
+          "scenario": "S1",
+          "role": "victim",
+          "function": "CWorkerService::q2",
+          "kind": "READ",
+          "target": "var",
+          "extra": {},
+          "file": "src/file1_service.cpp",
+          "line": 16
+        },
+        {
+          "scenario": "S1",
+          "role": "culprit",
+          "function": "CResourceOwner::q3",
+          "kind": "DELETE",
+          "target": "var",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 9
+        },
+        {
+          "scenario": "S1",
+          "role": "alloc",
+          "function": "CScenarioRunner::runS1",
+          "kind": "NEW",
+          "target": "var",
+          "extra": {},
+          "file": "src/main.cpp",
+          "line": 53
+        },
+        {
+          "scenario": "S1",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS1",
+          "kind": "SPAWN",
+          "target": "CWorkerService::q1",
+          "extra": {
+            "args": "std::ref(var)"
+          },
+          "file": "src/main.cpp",
+          "line": 57
+        },
+        {
+          "scenario": "S1",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS1",
+          "kind": "SPAWN",
+          "target": "CResourceOwner::q3",
+          "extra": {
+            "args": "std::ref(var)"
+          },
+          "file": "src/main.cpp",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "Field value changed by another thread (singleton member, std::async writer, lambda reader)",
+      "class": "VALUE_WRITE_RACE",
+      "error_log": {
+        "function": "CCommandHandler::execute",
+        "level": "ERROR",
+        "message_regex": "Invalid mode <N> for session <N>",
+        "min_count": 10
+      },
+      "thread_roots": {
+        "CCommandHandler::execute": "lambda in CScenarioRunner::runS2",
+        "CReconfigService::applyProfile": "lambda in CScenarioRunner::runS2 (std::async)"
+      },
+      "must_have_roles": [
+        "victim",
+        "culprit",
+        "spawn"
+      ],
+      "expects_cross_thread_evidence": true,
+      "expected_conclusion": "CReconfigService::applyProfile writes CSettings::m_mode (negative value) on an async thread while CCommandHandler::execute reads it on another thread; no lock. The 5 repeated errors per run form ONE cluster after normalization.",
+      "wrong_conclusions": [
+        "root cause is CCommandHandler::execute",
+        "m_mode was never initialised"
+      ],
+      "edges": [
+        {
+          "scenario": "S2",
+          "role": "culprit",
+          "function": "CReconfigService::applyProfile",
+          "kind": "WRITE",
+          "target": "CSettings::m_mode",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 15
+        },
+        {
+          "scenario": "S2",
+          "role": "victim",
+          "function": "CCommandHandler::execute",
+          "kind": "READ",
+          "target": "CSettings::m_mode",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 23
+        },
+        {
+          "scenario": "S2",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS2",
+          "kind": "SPAWN",
+          "target": "lambda->CCommandHandler::execute",
+          "extra": {
+            "args": "session"
+          },
+          "file": "src/main.cpp",
+          "line": 73
+        },
+        {
+          "scenario": "S2",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS2",
+          "kind": "SPAWN",
+          "target": "lambda->CReconfigService::applyProfile",
+          "extra": {
+            "args": "round"
+          },
+          "file": "src/main.cpp",
+          "line": 75
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "Partial locking: writer locks, reader (native OS thread) does not",
+      "class": "PARTIAL_LOCK_INVARIANT",
+      "error_log": {
+        "function": "CLedgerAuditor::audit",
+        "level": "ERROR",
+        "message_regex": "Ledger invariant broken: debit <N> credit <N>",
+        "min_count": 2
+      },
+      "thread_roots": {
+        "CLedgerAuditor::audit": "AuditorEntry (native thread via StartNativeThread)",
+        "CLedgerWriter::post": "CLedgerWriter::post (std::thread)"
+      },
+      "must_have_roles": [
+        "victim",
+        "culprit",
+        "culprit_aux",
+        "lock",
+        "missing_lock",
+        "spawn"
+      ],
+      "expects_cross_thread_evidence": true,
+      "expected_conclusion": "CLedgerWriter::post updates m_debit and m_credit in two steps under CAccountLedger::m_mutex, but CLedgerAuditor::audit reads both without taking the mutex, so it can see debit != credit. A lock exists but only on one side.",
+      "wrong_conclusions": [
+        "there is no lock in the code",
+        "the writer is missing a lock"
+      ],
+      "edges": [
+        {
+          "scenario": "S3",
+          "role": "lock",
+          "function": "CLedgerWriter::post",
+          "kind": "LOCK",
+          "target": "CAccountLedger::m_mutex",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 38
+        },
+        {
+          "scenario": "S3",
+          "role": "culprit",
+          "function": "CLedgerWriter::post",
+          "kind": "WRITE",
+          "target": "CAccountLedger::m_debit",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 40
+        },
+        {
+          "scenario": "S3",
+          "role": "culprit_aux",
+          "function": "CLedgerWriter::post",
+          "kind": "WRITE",
+          "target": "CAccountLedger::m_credit",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 43
+        },
+        {
+          "scenario": "S3",
+          "role": "missing_lock",
+          "function": "CLedgerAuditor::audit",
+          "kind": "NO_LOCK",
+          "target": "CAccountLedger::m_mutex",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 51
+        },
+        {
+          "scenario": "S3",
+          "role": "victim",
+          "function": "CLedgerAuditor::audit",
+          "kind": "READ",
+          "target": "CAccountLedger::m_debit",
+          "extra": {},
+          "file": "src/file2_settings.cpp",
+          "line": 51
+        },
+        {
+          "scenario": "S3",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS3",
+          "kind": "SPAWN",
+          "target": "CLedgerWriter::post",
+          "extra": {
+            "args": "std::ref(ledger)"
+          },
+          "file": "src/main.cpp",
+          "line": 88
+        },
+        {
+          "scenario": "S3",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS3",
+          "kind": "SPAWN",
+          "target": "AuditorEntry",
+          "extra": {
+            "via": "StartNativeThread",
+            "args": "ctx"
+          },
+          "file": "src/main.cpp",
+          "line": 93
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "title": "Control: both sides lock the same mutex, error is an ordering problem, NOT a data race",
+      "class": "PROTECTED_ORDERING",
+      "error_log": {
+        "function": "CCacheReader::read",
+        "level": "ERROR",
+        "message_regex": "Cache entry missing after eviction",
+        "min_count": 2
+      },
+      "thread_roots": {
+        "CCacheReader::read": "CCacheReader::read (std::thread)",
+        "CCacheEvictor::evict": "CCacheEvictor::evict (std::thread)"
+      },
+      "must_have_roles": [
+        "victim",
+        "culprit",
+        "lock",
+        "spawn"
+      ],
+      "expects_cross_thread_evidence": true,
+      "expected_conclusion": "NOT a data race. CCacheEvictor::evict and CCacheReader::read both hold CSafeCache::m_mutex. The entry was evicted first and read() assumes it still exists: an ordering/logic problem. A correct answer must report that both accesses are protected by the same lock.",
+      "wrong_conclusions": [
+        "unsynchronized data race",
+        "missing mutex"
+      ],
+      "edges": [
+        {
+          "scenario": "S4",
+          "role": "lock",
+          "function": "CCacheEvictor::evict",
+          "kind": "LOCK",
+          "target": "CSafeCache::m_mutex",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 20
+        },
+        {
+          "scenario": "S4",
+          "role": "culprit",
+          "function": "CCacheEvictor::evict",
+          "kind": "DELETE",
+          "target": "CSafeCache::m_entry",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 22
+        },
+        {
+          "scenario": "S4",
+          "role": "lock",
+          "function": "CCacheReader::read",
+          "kind": "LOCK",
+          "target": "CSafeCache::m_mutex",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 31
+        },
+        {
+          "scenario": "S4",
+          "role": "victim",
+          "function": "CCacheReader::read",
+          "kind": "READ",
+          "target": "CSafeCache::m_entry",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 33
+        },
+        {
+          "scenario": "S4",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS4",
+          "kind": "SPAWN",
+          "target": "CCacheEvictor::evict",
+          "extra": {
+            "args": "std::ref(cache)"
+          },
+          "file": "src/main.cpp",
+          "line": 105
+        },
+        {
+          "scenario": "S4",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS4",
+          "kind": "SPAWN",
+          "target": "CCacheReader::read",
+          "extra": {
+            "args": "std::ref(cache)"
+          },
+          "file": "src/main.cpp",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "title": "Container cleared by another thread; tasks run on a thread pool (spawn hidden behind std::function)",
+      "class": "CONTAINER_CLEAR_RACE_POOL",
+      "error_log": {
+        "function": "CCacheTasks::consume",
+        "level": "ERROR",
+        "message_regex": "Exception occured: Unknown exception",
+        "min_count": 2
+      },
+      "thread_roots": {
+        "CCacheTasks::consume": "lambda submitted to CThreadPool (worker thread)",
+        "CCacheTasks::invalidate": "lambda submitted to CThreadPool (worker thread)"
+      },
+      "must_have_roles": [
+        "victim",
+        "culprit",
+        "spawn"
+      ],
+      "expects_cross_thread_evidence": true,
+      "expected_conclusion": "CCacheTasks::invalidate clears m_payload on one pool worker while CCacheTasks::consume on another worker calls m_payload.at(0), which throws out_of_range. Both tasks were submitted as lambdas to CThreadPool::submit; no lock protects m_payload. The pool runs tasks through an indirect std::function call.",
+      "wrong_conclusions": [
+        "root cause is CCacheTasks::consume",
+        "bug in CThreadPool::workerLoop"
+      ],
+      "edges": [
+        {
+          "scenario": "S5",
+          "role": "spawn",
+          "function": "CThreadPool::CThreadPool",
+          "kind": "SPAWN",
+          "target": "CThreadPool::workerLoop",
+          "extra": {
+            "args": "this"
+          },
+          "file": "src/file3_owner.cpp",
+          "line": 42
+        },
+        {
+          "scenario": "S5",
+          "role": "culprit",
+          "function": "CCacheTasks::invalidate",
+          "kind": "CLEAR",
+          "target": "CCacheTasks::m_payload",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 85
+        },
+        {
+          "scenario": "S5",
+          "role": "victim",
+          "function": "CCacheTasks::consume",
+          "kind": "READ",
+          "target": "CCacheTasks::m_payload",
+          "extra": {},
+          "file": "src/file3_owner.cpp",
+          "line": 93
+        },
+        {
+          "scenario": "S5",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS5",
+          "kind": "SPAWN",
+          "target": "lambda->CCacheTasks::consume",
+          "extra": {
+            "via": "CThreadPool::submit"
+          },
+          "file": "src/main.cpp",
+          "line": 119
+        },
+        {
+          "scenario": "S5",
+          "role": "spawn",
+          "function": "CScenarioRunner::runS5",
+          "kind": "SPAWN",
+          "target": "lambda->CCacheTasks::invalidate",
+          "extra": {
+            "via": "CThreadPool::submit"
+          },
+          "file": "src/main.cpp",
+          "line": 121
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "title": "Regression: classic single-thread parameter bug (value flows through callers)",
+      "class": "PARAMETER_BUG",
+      "error_log": {
+        "function": "CServiceValidator::validate",
+        "level": "ERROR",
+        "message_regex": "Service name is empty",
+        "min_count": 2
+      },
+      "thread_roots": {},
+      "must_have_roles": [
+        "victim",
+        "culprit"
+      ],
+      "expects_cross_thread_evidence": false,
+      "expected_conclusion": "CMenuController::selectService returns an empty string for index 3; the value flows openMenu -> CRequestBuilder::build -> CServiceValidator::validate. NOT a concurrency problem: the system must not invent a race here.",
+      "wrong_conclusions": [
+        "data race",
+        "root cause is CServiceValidator::validate"
+      ],
+      "edges": [
+        {
+          "scenario": "S6",
+          "role": "victim",
+          "function": "CServiceValidator::validate",
+          "kind": "READ",
+          "target": "name",
+          "extra": {},
+          "file": "src/file1_service.cpp",
+          "line": 29
+        },
+        {
+          "scenario": "S6",
+          "role": "culprit",
+          "function": "CMenuController::selectService",
+          "kind": "RETURN_EMPTY",
+          "target": "name",
+          "extra": {},
+          "file": "src/file1_service.cpp",
+          "line": 47
+        }
+      ]
+    }
+  ]
+}

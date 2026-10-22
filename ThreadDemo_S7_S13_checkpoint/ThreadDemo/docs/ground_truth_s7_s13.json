@@ -1,0 +1,428 @@
+{
+  "schema_version": "2.0",
+  "source_root": "src",
+  "description": "Ground truth for opt-in ThreadDemo scenarios S7-S13. This file is outside source_root; source snippets are validated against the exact source line ranges.",
+  "log_window_ms": 2000,
+  "scenarios": [
+    {
+      "scenario_id": "S7",
+      "log_anchor": {
+        "function": "CS7Workers::runT2",
+        "normalized_message": "Shared resource unavailable after phase transition"
+      },
+      "root_cause_function": "CS7ResourceManager::releaseCurrent",
+      "file": "scenario_s7.cpp",
+      "line_start": 27,
+      "line_end": 27,
+      "exact_source_snippet": "            state.current.reset();",
+      "variable_or_resource": "S7State::current (unique_ptr<Resource>)",
+      "thread_entry_points": [
+        "CS7Workers::runT1",
+        "CS7Workers::runT2",
+        "CS7Workers::runT3",
+        "CS7Workers::runT4",
+        "CS7Workers::runT5",
+        "CS7Workers::runT6",
+        "CS7Workers::runT7",
+        "CS7Workers::runT8"
+      ],
+      "propagation_path": [
+        "runS7",
+        "std::thread dispatch to CS7Workers::runT6",
+        "CS7Workers::runT6",
+        "CS7Transport::forward (pass-through only)",
+        "CS7ResourceManager::releaseCurrent"
+      ],
+      "explanation": "Eight distinct worker threads are launched. T6 passes the same state through CS7Transport::forward, which does not mutate it, then CS7ResourceManager::releaseCurrent resets the shared unique_ptr before the seven observers are released. The observers are synchronized and safely report the missing resource, so this is a lifetime/ordering defect rather than an unsynchronized pointer race.",
+      "required_evidence": [
+        "Find the T6 thread entry point and follow the call chain through the non-mutating forward function.",
+        "Confirm the reset site and that it executes once readyCount reaches seven.",
+        "Show that T1-T5 and T7-T8 wait for released and then observe current as empty.",
+        "Confirm the audit marker written by T1 is read by T2 under the mutex before release; it is a decoy, not the cause."
+      ],
+      "decoy": {
+        "function": "CS7Workers::runT1",
+        "why_not_cause": "T1 writes auditValue while holding the state mutex, sets auditReady, and T2 waits on the condition variable before reading it. The audit marker is ordered and does not modify the owned resource."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS7ResourceManager::releaseCurrent",
+          "file": "scenario_s7.cpp",
+          "line_start": 27,
+          "line_end": 27,
+          "exact_source_snippet": "            state.current.reset();",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS7Workers::runT1",
+          "file": "scenario_s7.cpp",
+          "line_start": 52,
+          "line_end": 52,
+          "exact_source_snippet": "            std::lock_guard<std::mutex> lock(state.mutex);",
+          "role": "decoy_ordered_writer"
+        }
+      ],
+      "decoy_ordering_site": {
+        "function": "CS7Workers::runT1",
+        "file": "scenario_s7.cpp",
+        "line_start": 52,
+        "line_end": 52,
+        "exact_source_snippet": "            std::lock_guard<std::mutex> lock(state.mutex);",
+        "role": "decoy_ordered_writer"
+      },
+      "expected_class": "premature_resource_release"
+    },
+    {
+      "scenario_id": "S8",
+      "log_anchor": {
+        "function": "CS8Observer::run",
+        "normalized_message": "Value changed after exclusive path was selected"
+      },
+      "root_cause_function": "CS8Mutator::run",
+      "file": "scenario_s8.cpp",
+      "line_start": 21,
+      "line_end": 21,
+      "exact_source_snippet": "        const bool believedExclusive = resource.use_count() == 1;",
+      "variable_or_resource": "std::shared_ptr<Resource> resource; Resource::value",
+      "thread_entry_points": [
+        "CS8Mutator::run",
+        "CS8Observer::run"
+      ],
+      "propagation_path": [
+        "runS8",
+        "std::thread dispatch to CS8Mutator::run",
+        "resource.use_count() sample",
+        "CS8Observer::run calls weak.lock() after the sample",
+        "CS8Mutator::run updates Resource::value"
+      ],
+      "explanation": "The mutator samples use_count()==1 and treats that as an exclusive-use guarantee. The observer then successfully locks a weak_ptr and obtains a new shared owner after the sample. The mutator still changes the object, and the observer sees the change. A condition-variable gate orders the object write before the read, so the demo does not rely on a C++ data race; the defect is the stale exclusivity assumption.",
+      "required_evidence": [
+        "Verify the use_count check occurs before the observer calls weak.lock().",
+        "Verify a strong owner is acquired after the check but before the mutation.",
+        "Verify value read/write are sequenced by the gate mutex, so this is not classified as a raw data race."
+      ],
+      "decoy": {
+        "function": "CS8Observer::run",
+        "why_not_cause": "weak.lock() is a valid way to obtain shared ownership and is not unsafe by itself. It demonstrates that an owner can appear after the earlier use_count sample."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS8Mutator::run",
+          "file": "scenario_s8.cpp",
+          "line_start": 21,
+          "line_end": 21,
+          "exact_source_snippet": "        const bool believedExclusive = resource.use_count() == 1;",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS8Observer::run",
+          "file": "scenario_s8.cpp",
+          "line_start": 33,
+          "line_end": 33,
+          "exact_source_snippet": "    }",
+          "role": "observer_acquires_owner"
+        }
+      ],
+      "expected_class": "shared_ptr_exclusivity_check_to_act"
+    },
+    {
+      "scenario_id": "S9",
+      "log_anchor": {
+        "function": "CS9Scenario::run",
+        "normalized_message": "Original owner unavailable after transfer"
+      },
+      "root_cause_function": "runS9",
+      "file": "scenario_s9.cpp",
+      "line_start": 27,
+      "line_end": 27,
+      "exact_source_snippet": "    std::thread worker(&CS9Consumer::consume, &consumer, std::move(owner));",
+      "variable_or_resource": "std::unique_ptr<Resource> owner",
+      "thread_entry_points": [
+        "runS9",
+        "CS9Consumer::consume"
+      ],
+      "propagation_path": [
+        "runS9",
+        "std::thread constructor moves owner into CS9Consumer::consume",
+        "runS9 checks the moved-from owner",
+        "CS9Consumer::consume owns and cleans up the resource"
+      ],
+      "explanation": "std::move(owner) transfers ownership into the worker. The source unique_ptr is valid but empty after the move; the ERROR records a caller assumption that the source still owns the resource. This is a moved-from-state/ownership-contract mistake, not a defect in std::unique_ptr. The consumer demonstrates safe release followed immediately by unique_ptr re-wrapping and cleanup.",
+      "required_evidence": [
+        "Locate the move at thread construction.",
+        "Confirm the source owner is checked only after the move and is null.",
+        "Confirm the consumer receives ownership and the release() result is immediately re-wrapped in unique_ptr before reset."
+      ],
+      "decoy": {
+        "function": "CS9Consumer::consume",
+        "why_not_cause": "release() is paired with immediate construction of finalOwner from the returned pointer, so this path does not leak the allocation."
+      },
+      "root_cause_sites": [
+        {
+          "function": "runS9",
+          "file": "scenario_s9.cpp",
+          "line_start": 27,
+          "line_end": 27,
+          "exact_source_snippet": "    std::thread worker(&CS9Consumer::consume, &consumer, std::move(owner));",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS9Consumer::consume",
+          "file": "scenario_s9.cpp",
+          "line_start": 11,
+          "line_end": 11,
+          "exact_source_snippet": "        Resource* transferred = received.release();",
+          "role": "safe_release_rewrap"
+        }
+      ],
+      "expected_class": "unique_ptr_moved_from_contract"
+    },
+    {
+      "scenario_id": "S10",
+      "log_anchor": {
+        "function": "CS10Observer::observe",
+        "normalized_message": "Weak reference expired before consumer completed"
+      },
+      "root_cause_function": "CS10Owner::releaseEarly",
+      "file": "scenario_s10.cpp",
+      "line_start": 24,
+      "line_end": 24,
+      "exact_source_snippet": "        state.owner.reset();",
+      "variable_or_resource": "S10State::owner and S10State::observer (weak_ptr<Resource>)",
+      "thread_entry_points": [
+        "CS10Owner::releaseEarly",
+        "CS10Observer::observe"
+      ],
+      "propagation_path": [
+        "runS10",
+        "CS10Observer::observe announces observerReady",
+        "CS10Owner::releaseEarly resets the last strong owner",
+        "CS10Observer::observe attempts weak_ptr::lock"
+      ],
+      "explanation": "The observer is ready, but the owner resets the last shared_ptr before the consumer completes. weak_ptr::lock then returns an empty shared_ptr and the observer logs expiration. The evidence indicates expired ownership, not a use-after-free: the observer never dereferences an object after lock failure.",
+      "required_evidence": [
+        "Follow the owner release site and the condition-variable ordering.",
+        "Confirm the weak_ptr lock fails after the last strong owner is reset.",
+        "Do not label this a use-after-free or a dangling raw pointer dereference."
+      ],
+      "decoy": {
+        "function": "CS10Observer::observe",
+        "why_not_cause": "The weak_ptr observer handles lock failure correctly and never dereferences an expired object."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS10Owner::releaseEarly",
+          "file": "scenario_s10.cpp",
+          "line_start": 24,
+          "line_end": 24,
+          "exact_source_snippet": "        state.owner.reset();",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS10Observer::observe",
+          "file": "scenario_s10.cpp",
+          "line_start": 37,
+          "line_end": 37,
+          "exact_source_snippet": "        std::unique_lock<std::mutex> lock(state.mutex);",
+          "role": "expired_weak_observation"
+        }
+      ],
+      "expected_class": "weak_ptr_expired_ownership"
+    },
+    {
+      "scenario_id": "S11",
+      "log_anchor": {
+        "function": "CS11Observer::inspect",
+        "normalized_message": "Configured resource is unavailable"
+      },
+      "root_cause_function": "CS11Registry::clear",
+      "file": "scenario_s11.cpp",
+      "line_start": 23,
+      "line_end": 23,
+      "exact_source_snippet": "            RELEASE_AND_CLEAR(state.handle);",
+      "variable_or_resource": "S11State::handle (unique_ptr<Resource>)",
+      "thread_entry_points": [
+        "CS11Registry::clear",
+        "CS11Observer::inspect"
+      ],
+      "propagation_path": [
+        "runS11",
+        "std::thread dispatch to CS11Registry::clear",
+        "RELEASE_AND_CLEAR(state.handle) expansion",
+        "CS11Observer::inspect checks handle"
+      ],
+      "explanation": "The call site looks like a macro invocation, but RELEASE_AND_CLEAR expands to handle.reset(). That expansion clears the unique_ptr before the observer runs. Both clear and inspect use the same mutex, so the missing resource is a protected ordering/ownership defect rather than an unsynchronized access.",
+      "required_evidence": [
+        "Resolve RELEASE_AND_CLEAR at its call site and inspect its macro definition.",
+        "Connect the macro expansion to the unique_ptr reset mutation.",
+        "Confirm the observer waits for cleared and then sees an empty handle under the same mutex."
+      ],
+      "decoy": {
+        "function": "CS11Observer::inspect",
+        "why_not_cause": "The observer takes the state mutex and only reports the already-cleared handle; it does not mutate ownership."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS11Registry::clear",
+          "file": "scenario_s11.cpp",
+          "line_start": 23,
+          "line_end": 23,
+          "exact_source_snippet": "            RELEASE_AND_CLEAR(state.handle);",
+          "role": "root_cause"
+        },
+        {
+          "function": "RELEASE_AND_CLEAR macro definition",
+          "file": "scenario_s11_macros.h",
+          "line_start": 3,
+          "line_end": 3,
+          "exact_source_snippet": "#define RELEASE_AND_CLEAR(handle) do { (handle).reset(); } while (false)",
+          "role": "macro_definition"
+        },
+        {
+          "function": "CS11Observer::inspect",
+          "file": "scenario_s11.cpp",
+          "line_start": 35,
+          "line_end": 35,
+          "exact_source_snippet": "        std::unique_lock<std::mutex> lock(state.mutex);",
+          "role": "observer"
+        }
+      ],
+      "macro_name": "RELEASE_AND_CLEAR",
+      "macro_definition_file": "scenario_s11_macros.h",
+      "macro_definition_line": 3,
+      "expected_class": "macro_hidden_owner_reset"
+    },
+    {
+      "scenario_id": "S12",
+      "log_anchor": {
+        "function": "CS12Queue::invokeDeferred",
+        "normalized_message": "Deferred callback outlived its captured stack state"
+      },
+      "root_cause_function": "CS12Queue::registerCallback",
+      "file": "scenario_s12.cpp",
+      "line_start": 25,
+      "line_end": 25,
+      "exact_source_snippet": "        m_callback = [&localValue, lifetime]() {",
+      "variable_or_resource": "localValue captured by reference in CS12Queue::registerCallback",
+      "thread_entry_points": [
+        "CS12Queue::registerCallback",
+        "CS12Queue::invokeDeferred"
+      ],
+      "propagation_path": [
+        "runS12",
+        "CS12Queue::registerCallback creates localValue and stores a reference-capturing callback",
+        "registerCallback returns and S12LifetimeGuard marks the state dead",
+        "worker invokes CS12Queue::invokeDeferred"
+      ],
+      "explanation": "The callback escapes the function that owns localValue while retaining a reference capture. The lifetime token is marked false before localValue is destroyed, and the callback checks that token before reading localValue, so this test safely detects the expired capture contract without performing an actual dangling-reference read.",
+      "required_evidence": [
+        "Find the reference capture of localValue.",
+        "Show that the callback is stored on CS12Queue and invoked by a worker after registerCallback returns.",
+        "Verify the lifetime token check prevents reading localValue after expiration.",
+        "Do not claim this run proves an actual use-after-free; the unsafe dereference is deliberately avoided."
+      ],
+      "decoy": {
+        "function": "S12LifetimeGuard::~S12LifetimeGuard",
+        "why_not_cause": "The guard safely marks the stack state as expired using release/acquire atomics. It prevents the callback from dereferencing localValue after expiration."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS12Queue::registerCallback",
+          "file": "scenario_s12.cpp",
+          "line_start": 25,
+          "line_end": 25,
+          "exact_source_snippet": "        m_callback = [&localValue, lifetime]() {",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS12Queue::invokeDeferred",
+          "file": "scenario_s12.cpp",
+          "line_start": 37,
+          "line_end": 37,
+          "exact_source_snippet": "        if (!m_callback || !m_callback()) {",
+          "role": "deferred_invocation"
+        },
+        {
+          "function": "S12LifetimeGuard::~S12LifetimeGuard",
+          "file": "scenario_s12.cpp",
+          "line_start": 14,
+          "line_end": 14,
+          "exact_source_snippet": "    std::shared_ptr<S12LifetimeState> state;",
+          "role": "safety_guard"
+        }
+      ],
+      "expected_class": "deferred_reference_capture_lifetime"
+    },
+    {
+      "scenario_id": "S13",
+      "log_anchor": {
+        "function": "CS13Scenario::run",
+        "normalized_message": "Capacity fell below zero: <N>"
+      },
+      "root_cause_function": "CS13Quota::reservePrimary and CS13Quota::reserveFallback",
+      "file": "scenario_s13.cpp",
+      "line_start": 21,
+      "line_end": 21,
+      "exact_source_snippet": "        if (state.available.load() > 0) {",
+      "variable_or_resource": "S13State::available (atomic<int>)",
+      "thread_entry_points": [
+        "CS13Quota::reservePrimary",
+        "CS13Quota::reserveFallback"
+      ],
+      "propagation_path": [
+        "runS13",
+        "two std::threads enter reservePrimary and reserveFallback",
+        "both independently load available > 0 under different per-path mutexes",
+        "gate holds both until both checks complete",
+        "both call fetch_sub(1)",
+        "runS13 observes -1"
+      ],
+      "explanation": "Both paths can observe one available permit before either decrements it. They hold different mutexes and use a gate that deliberately lets both checks finish first; both then atomically decrement the counter, producing -1. Atomic operations prevent a data race on the integer, but they do not make the check-and-decrement transaction indivisible.",
+      "required_evidence": [
+        "Inspect both availability checks and both fetch_sub sites.",
+        "Confirm reservePrimary and reserveFallback hold different mutexes.",
+        "Confirm the gate forces both checks to complete before either decrement.",
+        "Classify this as a check-then-act invariant violation, not a data race caused by a non-atomic counter."
+      ],
+      "decoy": {
+        "function": "S13State::available",
+        "why_not_cause": "The atomic counter prevents unsynchronized memory access. The defect is that the logical check and decrement are separate operations and the two entry paths do not share one transaction lock."
+      },
+      "root_cause_sites": [
+        {
+          "function": "CS13Quota::reservePrimary",
+          "file": "scenario_s13.cpp",
+          "line_start": 21,
+          "line_end": 21,
+          "exact_source_snippet": "        if (state.available.load() > 0) {",
+          "role": "root_cause"
+        },
+        {
+          "function": "CS13Quota::reservePrimary",
+          "file": "scenario_s13.cpp",
+          "line_start": 23,
+          "line_end": 23,
+          "exact_source_snippet": "            state.available.fetch_sub(1);",
+          "role": "primary_decrement"
+        },
+        {
+          "function": "CS13Quota::reserveFallback",
+          "file": "scenario_s13.cpp",
+          "line_start": 32,
+          "line_end": 32,
+          "exact_source_snippet": "        if (state.available.load() > 0) {",
+          "role": "fallback_check"
+        },
+        {
+          "function": "CS13Quota::reserveFallback",
+          "file": "scenario_s13.cpp",
+          "line_start": 34,
+          "line_end": 34,
+          "exact_source_snippet": "            state.available.fetch_sub(1);",
+          "role": "fallback_decrement"
+        }
+      ],
+      "expected_class": "atomic_check_then_act_overbooking"
+    }
+  ]
+}

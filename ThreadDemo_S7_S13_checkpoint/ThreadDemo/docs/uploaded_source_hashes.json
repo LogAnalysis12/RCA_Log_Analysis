@@ -1,0 +1,60 @@
+{
+  "hash_algorithm": "SHA-256",
+  "files": [
+    {
+      "path": "src/common/CommonStructs.h",
+      "sha256": "1ec4db5b33e830802c271b22ef748fc71d15f81ea780b295e815a4ed16555230",
+      "bytes": 703
+    },
+    {
+      "path": "src/common/Logger.cpp",
+      "sha256": "45fa4ac045a5523ddfe2513061972735a2ddc2423fac82061248d8cfc827da6f",
+      "bytes": 2124
+    },
+    {
+      "path": "src/common/Logger.h",
+      "sha256": "fbc18fc6e92c74a1f0d9f6f36e958881499d7239ece76c57f9b7034dafccaf04",
+      "bytes": 555
+    },
+    {
+      "path": "src/common/NativeThread.h",
+      "sha256": "fbfbbcf30bc25ee7845c582d1c5edbe849767bb2d1ec1431fb134bf65b63d878",
+      "bytes": 1171
+    },
+    {
+      "path": "src/file1_service.cpp",
+      "sha256": "1d52c1580fb5d48f27ee9598f56afe963080726f0255500fa76af22318a679fb",
+      "bytes": 2282
+    },
+    {
+      "path": "src/file1_service.h",
+      "sha256": "e12f16c4fb777d0d7ee4ffb2ef3f3e06c36758bc04a70b30575c1d44b1536a9a",
+      "bytes": 559
+    },
+    {
+      "path": "src/file2_settings.cpp",
+      "sha256": "2fab9ac7e98659b20bb79730727c93db6f152e2607f9605cee8a28af666baa74",
+      "bytes": 2605
+    },
+    {
+      "path": "src/file2_settings.h",
+      "sha256": "706d3e00be1bd62348cb98a8dad8c523d82425b4005b553ca118a8d6faa86c62",
+      "bytes": 723
+    },
+    {
+      "path": "src/file3_owner.cpp",
+      "sha256": "f00084ed52a702fa2c5c4b5133bdcb939d304c92a1806514fe221056cf4e04ba",
+      "bytes": 3422
+    },
+    {
+      "path": "src/file3_owner.h",
+      "sha256": "8b5bfc82665dac18cad8b25bbdf507282d43b41faf0e48cffbbbe7df24deeffe",
+      "bytes": 1283
+    },
+    {
+      "path": "src/main.cpp",
+      "sha256": "833890cf5d5981e6162308f7d1edd9ad9cdd4baa352063e31a7cd5191290a322",
+      "bytes": 6255
+    }
+  ]
+}

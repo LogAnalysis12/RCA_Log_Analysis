@@ -1,0 +1,51 @@
+{
+  "change_manifest_version": "1.0",
+  "baseline": "Uploaded ThreadDemo (2).zip; no Git used.",
+  "pre_edit_backup": {
+    "path": "backups/main.cpp.bak1",
+    "sha256": "833890cf5d5981e6162308f7d1edd9ad9cdd4baa352063e31a7cd5191290a322"
+  },
+  "existing_file_changes": [
+    {
+      "path": "src/main.cpp",
+      "sha256_before": "833890cf5d5981e6162308f7d1edd9ad9cdd4baa352063e31a7cd5191290a322",
+      "sha256_after": "23a16feab814c9aa228b037eae59f7c2c6f2fdac7d37d09e2a9c86ddc64f444a",
+      "edit_scope": "Only the main() function body was replaced for scenario selection/dispatch; the file prefix and S1-S6 function definitions are byte-identical to backup."
+    }
+  ],
+  "new_source_files": [
+    "src/scenario_s10.cpp",
+    "src/scenario_s11.cpp",
+    "src/scenario_s12.cpp",
+    "src/scenario_s13.cpp",
+    "src/scenario_s7.cpp",
+    "src/scenario_s8.cpp",
+    "src/scenario_s9.cpp",
+    "src/scenario_s11_macros.h"
+  ],
+  "new_docs_and_tools": [
+    "docs/ground_truth_s7_s13.json",
+    "docs/S7_S13_RUNBOOK.md",
+    "docs/GRAPH_EXTRACTION_GAP_ANALYSIS.md",
+    "docs/S1_S6_preservation_manifest.json",
+    "docs/uploaded_source_hashes.json",
+    "docs/CHANGE_MANIFEST.json",
+    "tools/validate_ground_truth_s7_s13.py",
+    "tools/check_logs_s7_s13.py"
+  ],
+  "new_sample_log": "logs/sample_run_s7_s13.log",
+  "original_sample_log": {
+    "path": "logs/sample_run_01.log",
+    "sha256": "3dad71ebff64294bbc8c06d3e21c6809c4f18ae9eba0c8e2607abce7e5e83e5f",
+    "unchanged": true
+  },
+  "checks": {
+    "cpp17_build": "PASS",
+    "s1_s6_function_hashes": "PASS",
+    "s1_s6_function_line_ranges": "PASS",
+    "s7_s13_gt_validator": "PASS (18 exact source sites)",
+    "s7_s13_stress_runs": "PASS (each opt-in scenario ran three times, with target ERROR log anchors observed)",
+    "extractor_neo4j_rca_integration": "BLOCKED: current uploaded graph-extractor ZIP lacks the spawn-aware P3 files, importer/schema, and traversal package",
+    "s7_s13_log_validation": "PASS (all seven scenario starts and normalized ERROR anchors present; 0 malformed log lines)"
+  }
+}

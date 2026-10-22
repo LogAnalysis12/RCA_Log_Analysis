@@ -1,0 +1,156 @@
+14-10-2026_19:01:09.283 | 55.295096            | 166      | INFO        | CScenarioRunner::runS1 Scenario S1 start
+14-10-2026_19:01:09.283 | 55.295152            | 167      | DEBUG       | CHeartbeat::run FUNCTION_START
+14-10-2026_19:01:09.283 | 55.295172            | 168      | DEBUG       | CWorkerService::q1 FUNCTION_START
+14-10-2026_19:01:09.283 | 55.295207            | 169      | DEBUG       | CResourceOwner::q3 FUNCTION_START
+14-10-2026_19:01:09.303 | 55.315343            | 169      | INFO        | CResourceOwner::q3 Resource released
+14-10-2026_19:01:09.308 | 55.320251            | 167      | INFO        | CHeartbeat::run Tick 1
+14-10-2026_19:01:09.333 | 55.345409            | 167      | INFO        | CHeartbeat::run Tick 2
+14-10-2026_19:01:09.358 | 55.370575            | 167      | INFO        | CHeartbeat::run Tick 3
+14-10-2026_19:01:09.383 | 55.395290            | 168      | DEBUG       | CWorkerService::q2 FUNCTION_START
+14-10-2026_19:01:09.383 | 55.395404            | 168      | ERROR       | CWorkerService::q2 Exception occured: Unknown exception
+14-10-2026_19:01:09.383 | 55.395411            | 168      | DEBUG       | CWorkerService::q1 FUNCTION_END
+14-10-2026_19:01:09.383 | 55.395677            | 167      | INFO        | CHeartbeat::run Tick 4
+14-10-2026_19:01:09.409 | 55.420841            | 167      | INFO        | CHeartbeat::run Tick 5
+14-10-2026_19:01:09.413 | 55.425559            | 166      | INFO        | CScenarioRunner::runS2 Scenario S2 start
+14-10-2026_19:01:09.413 | 55.425635            | 170      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:09.413 | 55.425647            | 171      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:09.424 | 55.435769            | 171      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:09.434 | 55.445955            | 167      | INFO        | CHeartbeat::run Tick 6
+14-10-2026_19:01:09.459 | 55.471136            | 167      | INFO        | CHeartbeat::run Tick 7
+14-10-2026_19:01:09.464 | 55.475802            | 170      | ERROR       | CCommandHandler::execute Invalid mode -1 for session 17
+14-10-2026_19:01:09.464 | 55.475933            | 172      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:09.464 | 55.475942            | 173      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:09.474 | 55.486050            | 173      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:09.484 | 55.496240            | 167      | INFO        | CHeartbeat::run Tick 8
+14-10-2026_19:01:09.509 | 55.521457            | 167      | INFO        | CHeartbeat::run Tick 9
+14-10-2026_19:01:09.514 | 55.526032            | 172      | ERROR       | CCommandHandler::execute Invalid mode -2 for session 18
+14-10-2026_19:01:09.514 | 55.526128            | 174      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:09.514 | 55.526136            | 175      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:09.524 | 55.536232            | 175      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:09.534 | 55.546568            | 167      | INFO        | CHeartbeat::run Tick 10
+14-10-2026_19:01:09.560 | 55.571713            | 167      | INFO        | CHeartbeat::run Tick 11
+14-10-2026_19:01:09.564 | 55.576282            | 174      | ERROR       | CCommandHandler::execute Invalid mode -3 for session 19
+14-10-2026_19:01:09.564 | 55.576394            | 176      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:09.564 | 55.576405            | 177      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:09.574 | 55.586522            | 177      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:09.585 | 55.596866            | 167      | INFO        | CHeartbeat::run Tick 12
+14-10-2026_19:01:09.610 | 55.622040            | 167      | INFO        | CHeartbeat::run Tick 13
+14-10-2026_19:01:09.614 | 55.626516            | 176      | ERROR       | CCommandHandler::execute Invalid mode -4 for session 20
+14-10-2026_19:01:09.614 | 55.626639            | 178      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:09.614 | 55.626650            | 179      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:09.625 | 55.636751            | 179      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:09.635 | 55.647175            | 167      | INFO        | CHeartbeat::run Tick 14
+14-10-2026_19:01:09.660 | 55.672299            | 167      | INFO        | CHeartbeat::run Tick 15
+14-10-2026_19:01:09.665 | 55.676758            | 178      | ERROR       | CCommandHandler::execute Invalid mode -5 for session 21
+14-10-2026_19:01:09.685 | 55.697425            | 167      | INFO        | CHeartbeat::run Tick 16
+14-10-2026_19:01:09.695 | 55.706976            | 166      | INFO        | CScenarioRunner::runS3 Scenario S3 start
+14-10-2026_19:01:09.695 | 55.707041            | 180      | DEBUG       | CLedgerWriter::post FUNCTION_START
+14-10-2026_19:01:09.697 | 55.709159            | 181      | DEBUG       | CLedgerAuditor::audit FUNCTION_START
+14-10-2026_19:01:09.710 | 55.722588            | 167      | INFO        | CHeartbeat::run Tick 17
+14-10-2026_19:01:09.717 | 55.729324            | 181      | ERROR       | CLedgerAuditor::audit Ledger invariant broken: debit 100 credit 0
+14-10-2026_19:01:09.735 | 55.747698            | 167      | INFO        | CHeartbeat::run Tick 18
+14-10-2026_19:01:09.761 | 55.772851            | 167      | INFO        | CHeartbeat::run Tick 19
+14-10-2026_19:01:09.765 | 55.777289            | 166      | INFO        | CScenarioRunner::runS4 Scenario S4 start
+14-10-2026_19:01:09.765 | 55.777354            | 182      | DEBUG       | CCacheEvictor::evict FUNCTION_START
+14-10-2026_19:01:09.765 | 55.777361            | 183      | DEBUG       | CCacheReader::read FUNCTION_START
+14-10-2026_19:01:09.770 | 55.782461            | 182      | INFO        | CCacheEvictor::evict Entry evicted
+14-10-2026_19:01:09.786 | 55.797999            | 167      | INFO        | CHeartbeat::run Tick 20
+14-10-2026_19:01:09.795 | 55.807476            | 183      | ERROR       | CCacheReader::read Cache entry missing after eviction
+14-10-2026_19:01:09.811 | 55.823165            | 167      | INFO        | CHeartbeat::run Tick 21
+14-10-2026_19:01:09.825 | 55.837667            | 166      | INFO        | CScenarioRunner::runS5 Scenario S5 start
+14-10-2026_19:01:09.826 | 55.837750            | 184      | DEBUG       | CCacheTasks::consume FUNCTION_START
+14-10-2026_19:01:09.826 | 55.837758            | 185      | DEBUG       | CCacheTasks::invalidate FUNCTION_START
+14-10-2026_19:01:09.836 | 55.848274            | 167      | INFO        | CHeartbeat::run Tick 22
+14-10-2026_19:01:09.861 | 55.873396            | 167      | INFO        | CHeartbeat::run Tick 23
+14-10-2026_19:01:09.886 | 55.897906            | 184      | ERROR       | CCacheTasks::consume Exception occured: Unknown exception
+14-10-2026_19:01:09.886 | 55.898505            | 167      | INFO        | CHeartbeat::run Tick 24
+14-10-2026_19:01:09.911 | 55.923663            | 167      | INFO        | CHeartbeat::run Tick 25
+14-10-2026_19:01:09.921 | 55.932894            | 166      | INFO        | CScenarioRunner::runS6 Scenario S6 start
+14-10-2026_19:01:09.921 | 55.932913            | 166      | DEBUG       | CMenuController::openMenu FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932916            | 166      | DEBUG       | CMenuController::selectService FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932918            | 166      | DEBUG       | CRequestBuilder::build FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932920            | 166      | DEBUG       | CServiceValidator::validate FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932923            | 166      | DEBUG       | CMenuController::openMenu FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932924            | 166      | DEBUG       | CMenuController::selectService FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932947            | 166      | DEBUG       | CRequestBuilder::build FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932949            | 166      | DEBUG       | CServiceValidator::validate FUNCTION_START
+14-10-2026_19:01:09.921 | 55.932950            | 166      | ERROR       | CServiceValidator::validate Service name is empty
+14-10-2026_19:01:09.937 | 55.948855            | 167      | INFO        | CHeartbeat::run Tick 26
+14-10-2026_19:01:09.951 | 55.963076            | 166      | INFO        | CScenarioRunner::runS1 Scenario S1 start
+14-10-2026_19:01:09.951 | 55.963156            | 186      | DEBUG       | CWorkerService::q1 FUNCTION_START
+14-10-2026_19:01:09.951 | 55.963164            | 187      | DEBUG       | CResourceOwner::q3 FUNCTION_START
+14-10-2026_19:01:09.962 | 55.973983            | 167      | INFO        | CHeartbeat::run Tick 27
+14-10-2026_19:01:09.971 | 55.983267            | 187      | INFO        | CResourceOwner::q3 Resource released
+14-10-2026_19:01:09.987 | 55.999161            | 167      | INFO        | CHeartbeat::run Tick 28
+14-10-2026_19:01:10.012 | 56.024383            | 167      | INFO        | CHeartbeat::run Tick 29
+14-10-2026_19:01:10.037 | 56.049552            | 167      | INFO        | CHeartbeat::run Tick 30
+14-10-2026_19:01:10.052 | 56.063925            | 186      | DEBUG       | CWorkerService::q2 FUNCTION_START
+14-10-2026_19:01:10.052 | 56.064374            | 186      | ERROR       | CWorkerService::q2 Exception occured: Unknown exception
+14-10-2026_19:01:10.052 | 56.064378            | 186      | DEBUG       | CWorkerService::q1 FUNCTION_END
+14-10-2026_19:01:10.063 | 56.074905            | 167      | INFO        | CHeartbeat::run Tick 31
+14-10-2026_19:01:10.082 | 56.094703            | 166      | INFO        | CScenarioRunner::runS2 Scenario S2 start
+14-10-2026_19:01:10.083 | 56.094942            | 188      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:10.083 | 56.095392            | 189      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:10.088 | 56.100174            | 167      | INFO        | CHeartbeat::run Tick 32
+14-10-2026_19:01:10.093 | 56.105509            | 189      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:10.113 | 56.125289            | 167      | INFO        | CHeartbeat::run Tick 33
+14-10-2026_19:01:10.133 | 56.145087            | 188      | ERROR       | CCommandHandler::execute Invalid mode -1 for session 17
+14-10-2026_19:01:10.133 | 56.145210            | 190      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:10.133 | 56.145220            | 191      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:10.138 | 56.150400            | 167      | INFO        | CHeartbeat::run Tick 34
+14-10-2026_19:01:10.143 | 56.155330            | 191      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:10.163 | 56.175677            | 167      | INFO        | CHeartbeat::run Tick 35
+14-10-2026_19:01:10.183 | 56.195356            | 190      | ERROR       | CCommandHandler::execute Invalid mode -2 for session 18
+14-10-2026_19:01:10.183 | 56.195487            | 192      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:10.183 | 56.195497            | 193      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:10.189 | 56.200783            | 167      | INFO        | CHeartbeat::run Tick 36
+14-10-2026_19:01:10.193 | 56.205595            | 193      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:10.214 | 56.225896            | 167      | INFO        | CHeartbeat::run Tick 37
+14-10-2026_19:01:10.233 | 56.245624            | 192      | ERROR       | CCommandHandler::execute Invalid mode -3 for session 19
+14-10-2026_19:01:10.234 | 56.245737            | 194      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:10.234 | 56.245746            | 195      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:10.239 | 56.251020            | 167      | INFO        | CHeartbeat::run Tick 38
+14-10-2026_19:01:10.244 | 56.255855            | 195      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:10.264 | 56.276174            | 167      | INFO        | CHeartbeat::run Tick 39
+14-10-2026_19:01:10.284 | 56.295883            | 194      | ERROR       | CCommandHandler::execute Invalid mode -4 for session 20
+14-10-2026_19:01:10.284 | 56.295993            | 196      | DEBUG       | CCommandHandler::execute FUNCTION_START
+14-10-2026_19:01:10.284 | 56.296034            | 197      | DEBUG       | CReconfigService::applyProfile FUNCTION_START
+14-10-2026_19:01:10.289 | 56.301273            | 167      | INFO        | CHeartbeat::run Tick 40
+14-10-2026_19:01:10.294 | 56.306145            | 197      | INFO        | CReconfigService::applyProfile Profile applied
+14-10-2026_19:01:10.314 | 56.326491            | 167      | INFO        | CHeartbeat::run Tick 41
+14-10-2026_19:01:10.334 | 56.346139            | 196      | ERROR       | CCommandHandler::execute Invalid mode -5 for session 21
+14-10-2026_19:01:10.339 | 56.351606            | 167      | INFO        | CHeartbeat::run Tick 42
+14-10-2026_19:01:10.364 | 56.376352            | 166      | INFO        | CScenarioRunner::runS3 Scenario S3 start
+14-10-2026_19:01:10.364 | 56.376412            | 198      | DEBUG       | CLedgerWriter::post FUNCTION_START
+14-10-2026_19:01:10.365 | 56.376703            | 167      | INFO        | CHeartbeat::run Tick 43
+14-10-2026_19:01:10.366 | 56.378566            | 199      | DEBUG       | CLedgerAuditor::audit FUNCTION_START
+14-10-2026_19:01:10.387 | 56.398718            | 199      | ERROR       | CLedgerAuditor::audit Ledger invariant broken: debit 100 credit 0
+14-10-2026_19:01:10.390 | 56.401880            | 167      | INFO        | CHeartbeat::run Tick 44
+14-10-2026_19:01:10.415 | 56.427007            | 167      | INFO        | CHeartbeat::run Tick 45
+14-10-2026_19:01:10.434 | 56.446697            | 166      | INFO        | CScenarioRunner::runS4 Scenario S4 start
+14-10-2026_19:01:10.435 | 56.446794            | 200      | DEBUG       | CCacheEvictor::evict FUNCTION_START
+14-10-2026_19:01:10.435 | 56.446834            | 201      | DEBUG       | CCacheReader::read FUNCTION_START
+14-10-2026_19:01:10.440 | 56.451898            | 200      | INFO        | CCacheEvictor::evict Entry evicted
+14-10-2026_19:01:10.440 | 56.452103            | 167      | INFO        | CHeartbeat::run Tick 46
+14-10-2026_19:01:10.465 | 56.476986            | 201      | ERROR       | CCacheReader::read Cache entry missing after eviction
+14-10-2026_19:01:10.465 | 56.477193            | 167      | INFO        | CHeartbeat::run Tick 47
+14-10-2026_19:01:10.490 | 56.502311            | 167      | INFO        | CHeartbeat::run Tick 48
+14-10-2026_19:01:10.495 | 56.507141            | 166      | INFO        | CScenarioRunner::runS5 Scenario S5 start
+14-10-2026_19:01:10.495 | 56.507219            | 202      | DEBUG       | CCacheTasks::consume FUNCTION_START
+14-10-2026_19:01:10.495 | 56.507227            | 203      | DEBUG       | CCacheTasks::invalidate FUNCTION_START
+14-10-2026_19:01:10.515 | 56.527446            | 167      | INFO        | CHeartbeat::run Tick 49
+14-10-2026_19:01:10.540 | 56.552582            | 167      | INFO        | CHeartbeat::run Tick 50
+14-10-2026_19:01:10.555 | 56.567529            | 202      | ERROR       | CCacheTasks::consume Exception occured: Unknown exception
+14-10-2026_19:01:10.566 | 56.577699            | 167      | INFO        | CHeartbeat::run Tick 51
+14-10-2026_19:01:10.586 | 56.597753            | 166      | INFO        | CScenarioRunner::runS6 Scenario S6 start
+14-10-2026_19:01:10.586 | 56.597767            | 166      | DEBUG       | CMenuController::openMenu FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597770            | 166      | DEBUG       | CMenuController::selectService FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597772            | 166      | DEBUG       | CRequestBuilder::build FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597787            | 166      | DEBUG       | CServiceValidator::validate FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597790            | 166      | DEBUG       | CMenuController::openMenu FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597791            | 166      | DEBUG       | CMenuController::selectService FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597793            | 166      | DEBUG       | CRequestBuilder::build FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597794            | 166      | DEBUG       | CServiceValidator::validate FUNCTION_START
+14-10-2026_19:01:10.586 | 56.597796            | 166      | ERROR       | CServiceValidator::validate Service name is empty
+14-10-2026_19:01:10.591 | 56.602873            | 167      | INFO        | CHeartbeat::run Tick 52
+14-10-2026_19:01:10.616 | 56.627973            | 167      | INFO        | CHeartbeat::run Tick 53

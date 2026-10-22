@@ -1,0 +1,52 @@
+{
+  "manifest_version": "1.0",
+  "purpose": "Protect the existing S1-S6 function text and line ranges while adding opt-in S7+ scenarios.",
+  "created_from": "Uploaded ThreadDemo (2).zip baseline; do not treat as evidence for files outside that ZIP.",
+  "hash_algorithm": "SHA-256 of the exact source text from function signature through matching closing brace, including comments and whitespace.",
+  "preservation_rule": "After edits, these six function hashes and line ranges must remain unchanged. The integration edit should be restricted to main() where possible.",
+  "source_file_sha256_before_changes": "833890cf5d5981e6162308f7d1edd9ad9cdd4baa352063e31a7cd5191290a322",
+  "functions": [
+    {
+      "function": "CScenarioRunner::runS1",
+      "file": "src/main.cpp",
+      "start_line": 50,
+      "end_line": 62,
+      "sha256": "a0029eb8c0771c32c538cf1c99b9249abd451ea8108b08c72a0b795ab9159176"
+    },
+    {
+      "function": "CScenarioRunner::runS2",
+      "file": "src/main.cpp",
+      "start_line": 65,
+      "end_line": 79,
+      "sha256": "d0d298978fef0553b20b6c379a50cfd91cfa8adbcc6ceb4527799d20c22bef9e"
+    },
+    {
+      "function": "CScenarioRunner::runS3",
+      "file": "src/main.cpp",
+      "start_line": 82,
+      "end_line": 96,
+      "sha256": "c92c64dfb3d44cf179b8ed639acf8402a2db06756454c180042d35b6c934e1d3"
+    },
+    {
+      "function": "CScenarioRunner::runS4",
+      "file": "src/main.cpp",
+      "start_line": 99,
+      "end_line": 110,
+      "sha256": "d7d8726a4fc3171c3f90a343ffdd53bcf85213bd217dd8d5533e599361fc44af"
+    },
+    {
+      "function": "CScenarioRunner::runS5",
+      "file": "src/main.cpp",
+      "start_line": 113,
+      "end_line": 123,
+      "sha256": "66b30237be02fa91b4fdc38e58fc5ce0ca83b04cf141b2174cf015c2dec87ddd"
+    },
+    {
+      "function": "CScenarioRunner::runS6",
+      "file": "src/main.cpp",
+      "start_line": 126,
+      "end_line": 131,
+      "sha256": "3d665b1887b818998ece9b9ba5d067919eb1bdaa5723a2b922e5e7174418044d"
+    }
+  ]
+}

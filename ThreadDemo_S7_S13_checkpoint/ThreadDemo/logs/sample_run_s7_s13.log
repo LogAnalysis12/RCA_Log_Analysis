@@ -1,0 +1,93 @@
+20-10-2026_19:01:53.196 | 417.975216           | 1084     | DEBUG       | CS7Scenario::run FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975270           | 1084     | INFO        | CS7Scenario::run Scenario S7 start
+20-10-2026_19:01:53.196 | 417.975274           | 1085     | DEBUG       | CHeartbeat::run FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975361           | 1086     | DEBUG       | CS7Workers::runT1 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975371           | 1087     | DEBUG       | CS7Workers::runT2 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975386           | 1088     | DEBUG       | CS7Workers::runT3 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975410           | 1089     | DEBUG       | CS7Workers::runT4 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975449           | 1090     | DEBUG       | CS7Workers::runT5 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975484           | 1087     | INFO        | CS7Workers::runT2 Audit marker observed
+20-10-2026_19:01:53.196 | 417.975519           | 1092     | DEBUG       | CS7Workers::runT7 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975568           | 1093     | DEBUG       | CS7Workers::runT8 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975638           | 1091     | DEBUG       | CS7Workers::runT6 FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975643           | 1091     | DEBUG       | CS7Transport::forward FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975647           | 1091     | DEBUG       | CS7ResourceManager::releaseCurrent FUNCTION_START
+20-10-2026_19:01:53.196 | 417.975668           | 1088     | ERROR       | CS7Workers::runT3 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975676           | 1088     | DEBUG       | CS7Workers::runT3 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975676           | 1091     | INFO        | CS7ResourceManager::releaseCurrent Resource released
+20-10-2026_19:01:53.196 | 417.975679           | 1091     | DEBUG       | CS7ResourceManager::releaseCurrent FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975680           | 1086     | ERROR       | CS7Workers::runT1 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975695           | 1086     | DEBUG       | CS7Workers::runT1 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975681           | 1091     | DEBUG       | CS7Transport::forward FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975700           | 1091     | DEBUG       | CS7Workers::runT6 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975699           | 1089     | ERROR       | CS7Workers::runT4 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975710           | 1089     | DEBUG       | CS7Workers::runT4 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975726           | 1093     | ERROR       | CS7Workers::runT8 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975737           | 1093     | DEBUG       | CS7Workers::runT8 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975742           | 1090     | ERROR       | CS7Workers::runT5 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975748           | 1090     | DEBUG       | CS7Workers::runT5 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975758           | 1087     | ERROR       | CS7Workers::runT2 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975771           | 1087     | DEBUG       | CS7Workers::runT2 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975783           | 1092     | ERROR       | CS7Workers::runT7 Shared resource unavailable after phase transition
+20-10-2026_19:01:53.196 | 417.975787           | 1092     | DEBUG       | CS7Workers::runT7 FUNCTION_END
+20-10-2026_19:01:53.196 | 417.975858           | 1084     | DEBUG       | CS7Scenario::run FUNCTION_END
+20-10-2026_19:01:53.221 | 418.000386           | 1085     | INFO        | CHeartbeat::run Tick 1
+20-10-2026_19:01:53.227 | 418.006071           | 1084     | DEBUG       | CS8Scenario::run FUNCTION_START
+20-10-2026_19:01:53.227 | 418.006087           | 1084     | INFO        | CS8Scenario::run Scenario S8 start
+20-10-2026_19:01:53.227 | 418.006296           | 1094     | DEBUG       | CS8Mutator::run FUNCTION_START
+20-10-2026_19:01:53.227 | 418.006306           | 1094     | INFO        | CS8Mutator::run Ownership count inspected
+20-10-2026_19:01:53.227 | 418.006375           | 1095     | DEBUG       | CS8Observer::run FUNCTION_START
+20-10-2026_19:01:53.227 | 418.006430           | 1094     | DEBUG       | CS8Mutator::run FUNCTION_END
+20-10-2026_19:01:53.227 | 418.006515           | 1095     | ERROR       | CS8Observer::run Value changed after exclusive path was selected
+20-10-2026_19:01:53.227 | 418.006522           | 1095     | DEBUG       | CS8Observer::run FUNCTION_END
+20-10-2026_19:01:53.227 | 418.006551           | 1084     | DEBUG       | CS8Scenario::run FUNCTION_END
+20-10-2026_19:01:53.246 | 418.025538           | 1085     | INFO        | CHeartbeat::run Tick 2
+20-10-2026_19:01:53.257 | 418.036665           | 1084     | DEBUG       | CS9Scenario::run FUNCTION_START
+20-10-2026_19:01:53.257 | 418.036695           | 1084     | INFO        | CS9Scenario::run Scenario S9 start
+20-10-2026_19:01:53.257 | 418.036760           | 1084     | ERROR       | CS9Scenario::run Original owner unavailable after transfer
+20-10-2026_19:01:53.257 | 418.036789           | 1096     | DEBUG       | CS9Consumer::consume FUNCTION_START
+20-10-2026_19:01:53.257 | 418.036799           | 1096     | INFO        | CS9Consumer::consume Resource ownership received
+20-10-2026_19:01:53.257 | 418.036801           | 1096     | DEBUG       | CS9Consumer::consume FUNCTION_END
+20-10-2026_19:01:53.257 | 418.036852           | 1084     | DEBUG       | CS9Scenario::run FUNCTION_END
+20-10-2026_19:01:53.271 | 418.050688           | 1085     | INFO        | CHeartbeat::run Tick 3
+20-10-2026_19:01:53.288 | 418.066975           | 1084     | DEBUG       | CS10Scenario::run FUNCTION_START
+20-10-2026_19:01:53.288 | 418.067008           | 1084     | INFO        | CS10Scenario::run Scenario S10 start
+20-10-2026_19:01:53.288 | 418.067107           | 1097     | DEBUG       | CS10Observer::observe FUNCTION_START
+20-10-2026_19:01:53.288 | 418.067153           | 1098     | DEBUG       | CS10Owner::releaseEarly FUNCTION_START
+20-10-2026_19:01:53.288 | 418.067168           | 1098     | INFO        | CS10Owner::releaseEarly Ownership released
+20-10-2026_19:01:53.288 | 418.067170           | 1098     | DEBUG       | CS10Owner::releaseEarly FUNCTION_END
+20-10-2026_19:01:53.288 | 418.067181           | 1097     | ERROR       | CS10Observer::observe Weak reference expired before consumer completed
+20-10-2026_19:01:53.288 | 418.067185           | 1097     | DEBUG       | CS10Observer::observe FUNCTION_END
+20-10-2026_19:01:53.288 | 418.067322           | 1084     | DEBUG       | CS10Scenario::run FUNCTION_END
+20-10-2026_19:01:53.296 | 418.075829           | 1085     | INFO        | CHeartbeat::run Tick 4
+20-10-2026_19:01:53.318 | 418.097592           | 1084     | DEBUG       | CS11Scenario::run FUNCTION_START
+20-10-2026_19:01:53.318 | 418.097626           | 1084     | INFO        | CS11Scenario::run Scenario S11 start
+20-10-2026_19:01:53.318 | 418.097722           | 1099     | DEBUG       | CS11Registry::clear FUNCTION_START
+20-10-2026_19:01:53.318 | 418.097732           | 1099     | DEBUG       | CS11Registry::clear FUNCTION_END
+20-10-2026_19:01:53.318 | 418.097762           | 1100     | DEBUG       | CS11Observer::inspect FUNCTION_START
+20-10-2026_19:01:53.318 | 418.097771           | 1100     | ERROR       | CS11Observer::inspect Configured resource is unavailable
+20-10-2026_19:01:53.318 | 418.097773           | 1100     | DEBUG       | CS11Observer::inspect FUNCTION_END
+20-10-2026_19:01:53.318 | 418.097796           | 1084     | DEBUG       | CS11Scenario::run FUNCTION_END
+20-10-2026_19:01:53.322 | 418.101070           | 1085     | INFO        | CHeartbeat::run Tick 5
+20-10-2026_19:01:53.347 | 418.126237           | 1085     | INFO        | CHeartbeat::run Tick 6
+20-10-2026_19:01:53.348 | 418.127896           | 1084     | DEBUG       | CS12Scenario::run FUNCTION_START
+20-10-2026_19:01:53.349 | 418.127919           | 1084     | INFO        | CS12Scenario::run Scenario S12 start
+20-10-2026_19:01:53.349 | 418.127922           | 1084     | DEBUG       | CS12Queue::registerCallback FUNCTION_START
+20-10-2026_19:01:53.349 | 418.127928           | 1084     | DEBUG       | CS12Queue::registerCallback FUNCTION_END
+20-10-2026_19:01:53.349 | 418.128051           | 1101     | DEBUG       | CS12Queue::invokeDeferred FUNCTION_START
+20-10-2026_19:01:53.349 | 418.128059           | 1101     | ERROR       | CS12Queue::invokeDeferred Deferred callback outlived its captured stack state
+20-10-2026_19:01:53.349 | 418.128061           | 1101     | DEBUG       | CS12Queue::invokeDeferred FUNCTION_END
+20-10-2026_19:01:53.349 | 418.128105           | 1084     | DEBUG       | CS12Scenario::run FUNCTION_END
+20-10-2026_19:01:53.372 | 418.151426           | 1085     | INFO        | CHeartbeat::run Tick 7
+20-10-2026_19:01:53.379 | 418.158247           | 1084     | DEBUG       | CS13Scenario::run FUNCTION_START
+20-10-2026_19:01:53.379 | 418.158311           | 1084     | INFO        | CS13Scenario::run Scenario S13 start
+20-10-2026_19:01:53.379 | 418.158478           | 1102     | DEBUG       | CS13Quota::reservePrimary FUNCTION_START
+20-10-2026_19:01:53.379 | 418.158501           | 1103     | DEBUG       | CS13Quota::reserveFallback FUNCTION_START
+20-10-2026_19:01:53.379 | 418.158520           | 1103     | INFO        | CS13Quota::reserveFallback Permit reserved
+20-10-2026_19:01:53.379 | 418.158523           | 1103     | DEBUG       | CS13Quota::reserveFallback FUNCTION_END
+20-10-2026_19:01:53.379 | 418.158534           | 1102     | INFO        | CS13Quota::reservePrimary Permit reserved
+20-10-2026_19:01:53.379 | 418.158536           | 1102     | DEBUG       | CS13Quota::reservePrimary FUNCTION_END
+20-10-2026_19:01:53.379 | 418.158586           | 1084     | ERROR       | CS13Scenario::run Capacity fell below zero: -1
+20-10-2026_19:01:53.379 | 418.158593           | 1084     | DEBUG       | CS13Scenario::run FUNCTION_END
+20-10-2026_19:01:53.397 | 418.176589           | 1085     | INFO        | CHeartbeat::run Tick 8
+20-10-2026_19:01:53.422 | 418.201769           | 1085     | INFO        | CHeartbeat::run Tick 9
