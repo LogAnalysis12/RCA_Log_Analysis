@@ -1,0 +1,221 @@
+{
+  "schema_version": "1.1",
+  "description": "Configurable thread creation and asynchronous-dispatch APIs. Regexes are applied to the resolved callee/type plus call expression. target_arg_index is zero-based among callable arguments. Thread/spawn and configured direct lock/synchronization API matches use this file; common lifetime method names and atomic-like operation names are also recognized as explicitly heuristic extractor evidence.",
+  "spawn_apis": [
+    {
+      "api": "std::thread",
+      "match_regex": "(^|[^A-Za-z0-9_])std::thread(\\s*<|\\s*\\(|$)",
+      "node_kinds": [
+        "CXX_CONSTRUCT_EXPR"
+      ],
+      "user_args_start_index": 1,
+      "spawn_kind": "THREAD_CREATE",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        0
+      ]
+    },
+    {
+      "api": "std::async",
+      "match_regex": "(^|[^A-Za-z0-9_])std::async\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 2,
+      "spawn_kind": "ASYNC_DISPATCH",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        0,
+        1
+      ],
+      "user_args_start_index_options": [
+        1,
+        2
+      ],
+      "target_selection": "Prefer a function or lambda expression; index 1 permits std::launch policy overload."
+    },
+    {
+      "api": "pthread_create",
+      "match_regex": "(^|::)pthread_create\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 3,
+      "spawn_kind": "OS_THREAD_CREATE",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        2
+      ]
+    },
+    {
+      "api": "CreateThread",
+      "match_regex": "(^|::)CreateThread\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 3,
+      "spawn_kind": "OS_THREAD_CREATE",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        2
+      ]
+    },
+    {
+      "api": "_beginthreadex",
+      "match_regex": "(^|::)_beginthreadex\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 3,
+      "spawn_kind": "OS_THREAD_CREATE",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        2
+      ]
+    },
+    {
+      "api": "StartNativeThread",
+      "match_regex": "(^|::)StartNativeThread\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 1,
+      "spawn_kind": "WRAPPER_DISPATCH",
+      "target_kind_override": "WRAPPER_ARG",
+      "user_args_count": 1,
+      "target_arg_indices": [
+        0
+      ]
+    },
+    {
+      "api": "std::jthread",
+      "match_regex": "(^|[^A-Za-z0-9_])std::jthread(\\s*<|\\s*\\(|$)",
+      "node_kinds": [
+        "CXX_CONSTRUCT_EXPR"
+      ],
+      "user_args_start_index": 1,
+      "spawn_kind": "THREAD_CREATE",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        0
+      ]
+    },
+    {
+      "api": "thread-pool submit",
+      "match_regex": "(^|::)(submit|enqueue|dispatch)\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "user_args_start_index": 1,
+      "spawn_kind": "POOL_DISPATCH",
+      "target_kind_override": null,
+      "target_arg_indices": [
+        0
+      ]
+    },
+    {
+      "api": "std::execution::bulk_execute",
+      "match_regex": "(^|::)bulk_execute\\s*\\(",
+      "node_kinds": [
+        "CALL_EXPR"
+      ],
+      "target_arg_indices": [
+        1,
+        0
+      ],
+      "user_args_start_index": 2,
+      "spawn_kind": "EXECUTION_POLICY_DISPATCH",
+      "target_kind_override": null,
+      "target_selection": "Heuristic policy/callable position; confirm against the project API overload."
+    }
+  ],
+  "lock_apis": [
+    {
+      "api": "lock",
+      "match_regex": "(^|::)lock\\s*\\(",
+      "kind": "lock()",
+      "event": "ACQUIRE"
+    },
+    {
+      "api": "try_lock",
+      "match_regex": "(^|::)try_lock\\s*\\(",
+      "kind": "try_lock()",
+      "event": "TRY_ACQUIRE"
+    },
+    {
+      "api": "unlock",
+      "match_regex": "(^|::)unlock\\s*\\(",
+      "kind": "unlock()",
+      "event": "RELEASE"
+    },
+    {
+      "api": "EnterCriticalSection",
+      "match_regex": "(^|::)EnterCriticalSection\\s*\\(",
+      "kind": "CRITICAL_SECTION",
+      "event": "ACQUIRE"
+    },
+    {
+      "api": "LeaveCriticalSection",
+      "match_regex": "(^|::)LeaveCriticalSection\\s*\\(",
+      "kind": "CRITICAL_SECTION",
+      "event": "RELEASE"
+    },
+    {
+      "api": "AcquireSRWLock",
+      "match_regex": "(^|::)AcquireSRWLock[A-Za-z]*\\s*\\(",
+      "kind": "SRW_LOCK",
+      "event": "ACQUIRE"
+    },
+    {
+      "api": "ReleaseSRWLock",
+      "match_regex": "(^|::)ReleaseSRWLock[A-Za-z]*\\s*\\(",
+      "kind": "SRW_LOCK",
+      "event": "RELEASE"
+    }
+  ],
+  "synchronization_apis": [
+    {
+      "api": "wait",
+      "match_regex": "(^|::)wait\\s*\\(",
+      "kind": "WAIT"
+    },
+    {
+      "api": "notify_one",
+      "match_regex": "(^|::)notify_one\\s*\\(",
+      "kind": "NOTIFY_ONE"
+    },
+    {
+      "api": "notify_all",
+      "match_regex": "(^|::)notify_all\\s*\\(",
+      "kind": "NOTIFY_ALL"
+    },
+    {
+      "api": "join",
+      "match_regex": "(^|::)join\\s*\\(",
+      "kind": "THREAD_JOIN"
+    },
+    {
+      "api": "detach",
+      "match_regex": "(^|::)detach\\s*\\(",
+      "kind": "THREAD_DETACH"
+    }
+  ],
+  "smart_pointer_type_patterns": [
+    {
+      "kind": "UNIQUE_PTR",
+      "match_regex": "(^|[^A-Za-z0-9_])(?:std::)?unique_ptr\\s*<"
+    },
+    {
+      "kind": "SHARED_PTR",
+      "match_regex": "(^|[^A-Za-z0-9_])(?:std::)?shared_ptr\\s*<"
+    },
+    {
+      "kind": "WEAK_PTR",
+      "match_regex": "(^|[^A-Za-z0-9_])(?:std::)?weak_ptr\\s*<"
+    },
+    {
+      "kind": "INTRUSIVE_OR_CUSTOM_SMART_PTR",
+      "match_regex": "(^|[^A-Za-z0-9_])(?:intrusive_ptr|scoped_ptr|ComPtr|QSharedPointer|QWeakPointer)\\s*<"
+    }
+  ]
+}

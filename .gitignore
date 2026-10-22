@@ -1,0 +1,102 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+
+# Package and build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Checkpoints and worker runtime files
+checkpoints/
+worker-logs/
+
+# Generated extraction outputs
+functions.jsonl
+calls.csv
+data_fields.csv
+data_access.csv
+translation_units.csv
+extraction_report.json
+manifest.json
+
+# Generated graph output directories
+raw-extraction/
+neutral-graph-final/
+neutral-graph-final-working/
+graph-export/
+neptune-export/
+neptune-export-working/
+neptune-s3-upload/
+
+# Generated archives
+*.zip
+*.tar
+*.tar.gz
+
+# CMake and C/C++ build outputs
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+out/
+Debug/
+Release/
+x64/
+x86/
+
+# Visual Studio generated files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb

@@ -1,0 +1,257 @@
+NEPTUNE TO NEO4J MIGRATION GUIDE
+================================
+
+Scope
+-----
+This document records the code locations and implementation changes required to
+replace AWS Neptune with the locally running Neo4j Docker image in this
+workspace. It is based on inspection only; application code has not been changed.
+
+Important boundary: the graph-extractor does not currently connect to Neptune.
+The recommended extractor emits JSONL/CSV artifacts. Neptune access is in the
+log-analysis runtime under Parser_traversal/log-analysis-project. A graph import
+or database-specific converter is not present in the active workspace files
+searched, so Neo4j data loading must be added or supplied separately.
+
+Current Data Flow
+-----------------
+C/C++ source
+  -> graph-extractor resumable extraction
+  -> neutral JSONL/CSV artifacts
+  -> separate normalization / graph import step (not found here)
+  -> Neptune graph queried by log-analysis-project
+  -> log fingerprint resolution and source investigation
+
+The graph-extractor README describes Neptune and Neo4j exporters as downstream
+alternatives. Do not modify Clang parsing or the extractor's core extraction
+logic just to switch database drivers. The likely extractor-side work is a new
+Neo4j importer/converter after the normalized graph is produced.
+
+Priority 1: Replace the traversal database client
+--------------------------------------------------
+File: Parser_traversal/log-analysis-project/traversal/neptune_tools.py
+
+This is the main runtime database integration. NeptuneTraversalTools currently:
+- Creates a boto3 Session and neptunedata client in __init__.
+- Calls execute_open_cypher_query in _execute and passes JSON-encoded
+  parameters.
+- Calls get_engine_status, an AWS Neptune-specific health/status API.
+- Runs graph reads for Function nodes, CALLS and CALLS_EXTERNAL relationships,
+  DataField nodes, and field-access relationships.
+
+Implementation changes:
+1. Replace boto3 and botocore imports and client creation with the official
+   Neo4j Python driver (package: neo4j). Add a compatible neo4j dependency in
+   requirements.txt.
+2. Configure a Neo4j Driver from the local Bolt URI, username, and password;
+   use a database name where the deployment requires it. A usual local Docker
+   URI is bolt://localhost:7687, but use the actual host port mapping from the
+   running container. Do not assume the port or credentials without checking
+   the local Docker setup.
+3. Verify connectivity with the driver and execute queries in a session using
+   session.run(query, parameters). Return plain dictionaries from records so
+   callers retain the current list[dict] result contract.
+4. Replace get_engine_status with a Neo4j connectivity/health check, or remove
+   it and update the callers that depend on its fields. Neptune's status keys
+   dbEngineVersion and role do not have a direct Neo4j equivalent.
+5. Add an explicit close/lifecycle path for the driver. Ensure the main CLI and
+   tests close it on success and failure. The Neo4j Driver is intended to be
+   shared; sessions should be short-lived and scoped to query operations.
+
+The existing query text is already openCypher-like. Keep each query's result
+columns and parameter names stable while switching the transport first. Then
+validate syntax and behavior against the target Neo4j server version. Neptune's
+openCypher support and Neo4j Cypher are not guaranteed to be identical.
+
+Priority 2: Stop using Neptune-internal node IDs as application identifiers
+---------------------------------------------------------------------------
+Files:
+- Parser_traversal/log-analysis-project/traversal/neptune_tools.py
+- Parser_traversal/log-analysis-project/neptune_anchor.py
+
+The active query layer uses id(node) in WHERE and RETURN clauses, and formats
+results as neptune_node_id. Those are Neptune-specific assumptions and should
+not be carried into Neo4j. Neo4j internal IDs are also unsuitable as durable
+application IDs; do not replace id(n) with Neo4j's internal id() or deprecated
+id() behavior as a migration shortcut.
+
+Preferred design:
+- Use the existing stable Function.function_id and DataField.field_id
+  properties for lookup, filtering, returned identity, and deduplication.
+- For ExternalSymbol nodes, ensure the importer defines a deterministic
+  external symbol ID (for example, from the same normalized identity used when
+  constructing the symbol), and enforce uniqueness for it.
+- Change MATCH filters such as WHERE id(f) = $id to property lookups such as
+  WHERE f.function_id = $function_id. Apply the same change for targets,
+  callers, fields, and excluded writers.
+- Return the stable property under function_id, field_id, or symbol_id. Replace
+  neptune_node_id keys in result dictionaries with neutral names such as
+  function_id/field_id/symbol_id (or an explicitly documented graph_key).
+- Update ensure_function_id/ensure_field_id and strip_id_space as needed.
+  These helpers currently normalize labels like Function:fn_... and assume
+  callers can pass Neptune node IDs. Preserve compatibility with the stable IDs
+  already written into resolved_issues.json.
+- Keep _group_by_id grouping by stable IDs, not database-generated IDs.
+
+Queries in traversal/neptune_tools.py to review include get_function,
+find_callers, both queries in find_callees, find_fields_read, and
+find_field_writers. Also update all returned IDs and result dictionary keys in
+those methods, not only the MATCH predicates. read_function_source returns a
+neptune_node_id today and is part of that contract.
+
+In neptune_anchor.py, exact_candidates and function_name_candidates currently
+return id(f) AS function_id. Return the stored f.function_id instead. This is
+important because Task 31's selected_function.function_id is later passed to
+the traversal tools; it must be the same stable ID stored on the imported node.
+
+Priority 3: Add Neo4j constraints and a compatible graph import
+---------------------------------------------------------------
+Files / boundary:
+- No active graph importer or graph-store writer was found in the inspected
+  workspace. The extraction README places graph normalization and DB conversion
+  downstream from graph-extractor.
+- graph-extractor/README_graph_extractor.md describes generated functions.jsonl,
+  calls.csv, data_fields.csv, and data_access.csv artifacts and says to use a
+  neutral graph as the database-independent source of truth.
+
+Required import work (new component or the actual external converter):
+1. Map extracted Function records to :Function nodes, DataField records to
+   :DataField nodes, external/unresolved callees to :ExternalSymbol nodes, and
+   call/access rows to the relationship types used by traversal queries.
+2. Store stable IDs as node properties: function_id, field_id, and symbol_id.
+   Preserve required properties read by traversal queries, including names,
+   signatures, paths, line ranges, content hashes, access metadata, call-site
+   metadata, and resolution status.
+3. Create uniqueness constraints/indexes for stable ID properties before
+   importing; use MERGE keyed on those properties so reruns are idempotent.
+4. Preserve the relationship names expected by the reader:
+   CALLS, CALLS_EXTERNAL, READS, WRITES, READS_WRITES, and POSSIBLE_WRITE.
+   The reader also uses relationship properties such as line, column, chain,
+   call_type, call_expression, and resolution_status.
+5. Check whether the normalized exporter represents all access types and
+   external-symbol relationships. The raw extractor emits READ, WRITE,
+   READ_WRITE, and POSSIBLE_WRITE in data_access.csv; map these deliberately to
+   the relationship types expected by traversal queries.
+6. Test import counts and referential integrity before running the log-agent.
+
+Do not assume raw extractor data can be loaded directly: its README identifies a
+separate normalization stage. Confirm the normalized schema and converter input
+before implementing the Neo4j loader.
+
+Priority 4: Change configuration and startup validation
+-------------------------------------------------------
+Files:
+- Parser_traversal/log-analysis-project/config.example.json
+- Parser_traversal/log-analysis-project/main.py
+- Parser_traversal/log-analysis-project/traversal/run_traversal.py
+- Parser_traversal/log-analysis-project/traversal/test_tools.py
+- Parser_traversal/log-analysis-project/README.md
+
+config.example.json currently has a neptune object with endpoint, port 8182,
+AWS region, and profile. Replace it with a neo4j object containing the Bolt URI,
+username, password, and optional database name. Keep secrets out of the checked-
+in example file; read the password from an environment variable or an
+untracked local config file.
+
+main.py validates neptune.endpoint, returns endpoint/region/profile settings,
+imports create_client from neptune_anchor, offers --skip-neptune, and reports
+neptune_engine_status. Update all of these together. A --skip-graph or
+--skip-neo4j option may be clearer, but keep CLI compatibility intentionally if
+existing scripts rely on --skip-neptune.
+
+traversal/run_traversal.py reads config["neptune"] and constructs
+NeptuneTraversalTools with endpoint/region/port/profile. Switch it to the Neo4j
+settings and the new tool/repository class constructor. traversal/test_tools.py
+contains the same config/client wiring and must be updated with the production
+path.
+
+neptune_anchor.py creates the Neptune boto3 client and is imported by main.py.
+Replace that client/query adapter too, or consolidate Task 31 and traversal access
+on one database repository so the two code paths cannot drift. Consider renaming
+neptune_anchor.py after references are updated; the name is not required for the
+technical migration but leaving it will mislead maintainers.
+
+Priority 5: Update tests, outputs, and documentation
+----------------------------------------------------
+- Update traversal/test_tools.py to construct the Neo4j implementation and
+  validate stable-ID lookups, callers, callees, fields, and field writers.
+- Add focused tests for query execution/result conversion using a fake driver;
+  add an integration test against the local Docker database for Cypher syntax,
+  constraints, and expected fixture results.
+- Test Task 31's exact qualified-name match, unique-name fallback, ambiguous
+  candidates, and unresolved result using stored Function.function_id values.
+- Update report/output names such as neptune_engine_status and any
+  neptune_node_id/target_neptune_node_id fields to neutral graph terminology.
+  Search downstream consumers before changing JSON keys; preserving old keys
+  temporarily may be needed for existing output compatibility.
+- Update README.md's file map, setup, config sample, run instructions, and
+  references to starting Neptune. Update run.ps1 if it embeds Neptune options.
+- Update requirements.txt: remove boto3 if no other active feature uses it;
+  add neo4j. Confirm with an import/dependency audit before removing boto3.
+
+Local Docker operational requirements (outside Python source)
+-------------------------------------------------------------
+The Neo4j container must publish its Bolt port to the host (commonly 7687), be
+running before the application starts, and have known credentials/database
+configuration. Verify the actual container port mapping and health state locally.
+Configure the Python client with the matching URI and authentication. For local
+development, do not expose the Bolt port publicly; keep credentials out of logs
+and version control. TLS/encryption options should match the local container's
+configuration rather than being assumed.
+
+Suggested Migration Order
+-------------------------
+1. Confirm the Neo4j Docker image version, Bolt port mapping, auth, database, and
+   required Cypher version/features.
+2. Confirm the normalized graph import schema and stable ID properties; create or
+   implement the Neo4j importer and constraints, then load a small fixture.
+3. Replace the client transport in traversal/neptune_tools.py while preserving
+   result contracts; migrate node matching/return values to stable IDs.
+4. Migrate neptune_anchor.py and ensure Task 31 emits the stable Function ID
+   accepted by the traversal tools.
+5. Switch config validation and wiring in main.py, run_traversal.py, and
+   test_tools.py; update dependencies and documentation.
+6. Run unit tests, then the local Neo4j integration test, then verify a full
+   end-to-end issue from error cluster to anchor to callers/callees/field access.
+
+Files to Change: Checklist
+--------------------------
+[ ] traversal/neptune_tools.py       Neo4j driver, sessions, query IDs, results
+[ ] neptune_anchor.py                Neo4j query client and stable Function IDs
+[ ] main.py                          config validation, CLI flags, status report
+[ ] traversal/run_traversal.py       Neo4j config and repository construction
+[ ] traversal/test_tools.py          test setup and expected identity contract
+[ ] config.example.json              Neo4j connection settings, no secrets
+[ ] requirements.txt                 neo4j dependency; remove unused boto3
+[ ] README.md                        setup, architecture, config, operations
+[ ] run.ps1                          update any Neptune-specific invocation
+[ ] Graph importer/converter        add or update downstream normalized import
+[ ] Tests                            fake-driver, Neo4j integration, end-to-end
+
+Files Not Expected to Change for the Database Switch
+-----------------------------------------------------
+graph-extractor/extract_graph.py is an older development-stage extractor per
+README_graph_extractor.md, not the active database client. The recommended
+resumable extraction path writes neutral artifacts and should remain database-
+agnostic. Do not modify its Clang parsing logic for a Neptune-to-Neo4j transport
+change. Add Neo4j work at the downstream import boundary instead.
+
+Evidence Locations
+------------------
+- Parser_traversal/log-analysis-project/traversal/neptune_tools.py:
+  active traversal client and all graph read queries.
+- Parser_traversal/log-analysis-project/neptune_anchor.py:
+  Task 31's separate Neptune client and Function lookup queries.
+- Parser_traversal/log-analysis-project/main.py:
+  configuration validation, Task 31 lifecycle, and status reporting.
+- Parser_traversal/log-analysis-project/traversal/run_traversal.py:
+  runtime tool construction from Neptune config.
+- Parser_traversal/log-analysis-project/traversal/test_tools.py:
+  tool validation setup from Neptune config.
+- Parser_traversal/log-analysis-project/config.example.json:
+  current Neptune endpoint/port/AWS configuration.
+- Parser_traversal/log-analysis-project/requirements.txt:
+  current boto3-only declared runtime dependency.
+- graph-extractor/README_graph_extractor.md:
+  extraction artifacts, historical status of extract_graph.py, and downstream
+  normalization/export boundary.

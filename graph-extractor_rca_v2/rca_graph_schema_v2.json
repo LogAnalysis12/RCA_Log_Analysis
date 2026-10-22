@@ -1,0 +1,274 @@
+{
+  "schema_version": "2.0",
+  "extractor_version": "rca-v2.0",
+  "purpose": "Static C/C++ source evidence for downstream root-cause-analysis graph construction; it does not store a culprit/victim conclusion.",
+  "language_support": [
+    "C",
+    "C++"
+  ],
+  "legacy_artifacts_preserved": {
+    "functions.jsonl": "Existing function extraction record contract; do not persist source_code/source excerpt in Neo4j.",
+    "calls.csv": "Existing call record columns unchanged.",
+    "data_fields.csv": "Existing field record columns unchanged.",
+    "data_access.csv": "Existing field-access record columns unchanged.",
+    "translation_units.csv": "Existing per-translation-unit record columns unchanged."
+  },
+  "new_artifacts": {
+    "variables.csv": {
+      "identity": "variable_id",
+      "meaning": "Project locals, parameters, globals, and fields with declaration/type/ownership metadata.",
+      "key_fields": [
+        "variable_id",
+        "type_id",
+        "owner_function_id",
+        "owner_callable_id",
+        "relative_path",
+        "line",
+        "column",
+        "pointer_depth",
+        "reference_kind",
+        "smart_pointer_kind",
+        "ownership_model_hint"
+      ]
+    },
+    "function_parameters.csv": {
+      "identity": "parameter_id",
+      "meaning": "Parameter order and owning Function or Callable, mapped to a declared type ID. function_id and callable_id are distinct owner fields.",
+      "key_fields": [
+        "parameter_id",
+        "function_id",
+        "callable_id",
+        "parameter_index",
+        "type_id",
+        "relative_path",
+        "line"
+      ]
+    },
+    "variable_accesses.csv": {
+      "identity": "access_id",
+      "meaning": "Static variable use classified as read/write/read-write/possible-write; lambda-body uses link through callable_id rather than a fabricated Function node.",
+      "access_kinds": [
+        "READ",
+        "WRITE",
+        "READ_WRITE",
+        "POSSIBLE_WRITE"
+      ],
+      "key_fields": [
+        "access_id",
+        "function_id",
+        "callable_id",
+        "variable_id",
+        "access_type",
+        "relative_path",
+        "line",
+        "evidence_grade"
+      ]
+    },
+    "call_sites.csv": {
+      "identity": "call_site_id",
+      "meaning": "One source occurrence of a call/constructor, including project, external, function-pointer-variable, and unresolved targets.",
+      "resolution_statuses": [
+        "RESOLVED_PROJECT",
+        "RESOLVED_EXTERNAL",
+        "RESOLVED_FUNCTION_POINTER_VARIABLE",
+        "UNRESOLVED"
+      ]
+    },
+    "call_arguments.csv": {
+      "identity": "argument_id",
+      "meaning": "Arguments, references, type IDs, and positional formal-parameter binding when project declarations are visible.",
+      "key_fields": [
+        "argument_id",
+        "call_site_id",
+        "caller_function_id",
+        "caller_callable_id",
+        "callee_function_id",
+        "argument_index",
+        "target_parameter_id",
+        "referenced_variable_ids"
+      ]
+    },
+    "data_flows.csv": {
+      "identity": "flow_id",
+      "meaning": "Syntax-level assignment/alias, argument, lambda-reference, move, and thread-entry argument evidence.",
+      "flow_kinds": [
+        "ARGUMENT_TO_PARAMETER",
+        "POINTER_ALIAS_ASSIGNMENT",
+        "POINTER_ALIAS_INITIALIZATION",
+        "SMART_POINTER_COPY_INITIALIZATION",
+        "MOVE_CONSTRUCTION",
+        "SPAWN_ARGUMENT_TO_PARAMETER",
+        "LAMBDA_BODY_REFERENCE"
+      ]
+    },
+    "function_return_types.csv": {
+      "identity": "function_id",
+      "meaning": "Declared return type and ownership/type shape hints."
+    },
+    "return_flows.csv": {
+      "identity": "return_id",
+      "meaning": "Return expression and referenced local/parameter IDs; not a proof of escape safety."
+    },
+    "types.csv": {
+      "identity": "type_id",
+      "meaning": "Named declarations and type-use nodes including raw pointers/references, arrays, function pointers, smart-pointer types and built-ins."
+    },
+    "type_relationships.csv": {
+      "identity": "relationship_id",
+      "meaning": "Source/target type relationship with explicit type relation and evidence grade.",
+      "relationship_types": [
+        "INHERITS",
+        "TYPE_ALIAS_OF",
+        "POINTS_TO_TYPE",
+        "REFERENCES_TYPE",
+        "ELEMENT_TYPE",
+        "SMART_POINTER_TO_TYPE",
+        "WEAKLY_REFERENCES_TYPE"
+      ]
+    },
+    "lifetime_events.csv": {
+      "identity": "event_id",
+      "meaning": "Allocation/deallocation, free, reset, release, clear, erase, make-shared/unique, move and smart-pointer operation sites.",
+      "event_kinds": [
+        "NEW",
+        "DELETE",
+        "FREE",
+        "RESET",
+        "RELEASE",
+        "CLEAR",
+        "ERASE",
+        "REALLOCATE",
+        "ALLOCATE_C_OR_OPERATOR_NEW",
+        "MOVE",
+        "FORWARD",
+        "MAKE_UNIQUE",
+        "MAKE_SHARED"
+      ]
+    },
+    "pointer_events.csv": {
+      "identity": "event_id",
+      "meaning": "Dereferences, address-of, arrow/index access, pointer alias/copy/reassignment, nulling, arithmetic and allocation/deallocation sites."
+    },
+    "thread_spawns.csv": {
+      "identity": "spawn_id",
+      "meaning": "Config-driven thread/async dispatch sites with distinct spawner/target Function, Callable, ExternalSymbol, or function-pointer Variable IDs where resolution permits.",
+      "target_kinds": [
+        "FUNCTION_REF",
+        "EXTERNAL_FUNCTION_REF",
+        "LAMBDA",
+        "WRAPPER_ARG",
+        "FUNCTION_POINTER_VARIABLE",
+        "UNRESOLVED"
+      ],
+      "key_fields": [
+        "spawn_id",
+        "spawner_function_id",
+        "spawner_callable_id",
+        "target_function_id",
+        "target_callable_id",
+        "target_external_symbol_id",
+        "target_variable_id",
+        "target_kind",
+        "relative_path",
+        "line",
+        "resolution_status",
+        "evidence_grade"
+      ],
+      "resolution_statuses": [
+        "RESOLVED",
+        "RESOLVED_EXTERNAL",
+        "UNRESOLVED"
+      ]
+    },
+    "callable_targets.jsonl": {
+      "identity": "callable_id",
+      "meaning": "Lambda callable and observed body-call metadata."
+    },
+    "external_symbols.jsonl": {
+      "identity": "symbol_id",
+      "meaning": "Referenced out-of-repository functions/constructors that should be represented as external graph nodes."
+    },
+    "lock_usage.csv": {
+      "identity": "lock_event_id",
+      "meaning": "RAII and configured direct locking API evidence; lexical scope and acquisition mode remain explicit.",
+      "raii_events": [
+        "RAII_ACQUIRE_AND_SCOPE_RELEASE",
+        "RAII_DEFERRED_LOCK",
+        "RAII_TRY_ACQUIRE",
+        "RAII_ADOPT_EXISTING_LOCK"
+      ]
+    },
+    "synchronization_events.csv": {
+      "identity": "event_id",
+      "meaning": "Join/detach/wait/notify, configured synchronization and atomic-like operation sites."
+    },
+    "control_flow_events.csv": {
+      "identity": "event_id",
+      "meaning": "Null checks, pointer-presence tests, throw/catch, and empty/null returns."
+    },
+    "macro_events.csv": {
+      "identity": "macro_event_id",
+      "meaning": "Clang preprocessing record for macro definition and invocation/expansion when available."
+    },
+    "ground_truth_check.csv": {
+      "identity": "scenario plus edge and expected location",
+      "meaning": "Post-extraction benchmark validation only; never an extractor input or production graph fact."
+    }
+  },
+  "graph_node_labels": [
+    "Function",
+    "Callable",
+    "CallSite",
+    "ExternalSymbol",
+    "Variable",
+    "DataField",
+    "Parameter",
+    "Type",
+    "LifetimeEvent",
+    "PointerEvent",
+    "ThreadSpawn",
+    "LockUsageEvent",
+    "SynchronizationEvent",
+    "ControlFlowEvent",
+    "MacroEvent"
+  ],
+  "core_relationships": [
+    "CALLS",
+    "CALLS_EXTERNAL",
+    "HAS_PARAMETER",
+    "HAS_TYPE",
+    "RETURNS_TYPE",
+    "READS",
+    "WRITES",
+    "READS_WRITES",
+    "POSSIBLE_WRITE",
+    "PASSES_ARGUMENT",
+    "ALIASES",
+    "COPIES_OWNERSHIP",
+    "AFFECTS",
+    "SPAWNS_THREAD",
+    "DISPATCHES_ASYNC",
+    "PASSES_TO_THREAD_ENTRY",
+    "INHERITS",
+    "POINTS_TO_TYPE",
+    "REFERENCES_TYPE",
+    "SMART_POINTER_TO_TYPE",
+    "WEAKLY_REFERENCES_TYPE",
+    "TYPE_ALIAS_OF",
+    "LOCK_OPERATION",
+    "SYNCHRONIZATION_OPERATION",
+    "HAS_CONTROL_FLOW_EVENT",
+    "POSSIBLY_EXPANDED_FROM"
+  ],
+  "provenance_requirements": [
+    "relative_path",
+    "line",
+    "column where available",
+    "evidence_grade",
+    "resolution_status where relevant"
+  ],
+  "static_evidence_only": true,
+  "creates_span_nodes": false,
+  "writes_neo4j": false,
+  "ground_truth_is_extractor_input": false
+}

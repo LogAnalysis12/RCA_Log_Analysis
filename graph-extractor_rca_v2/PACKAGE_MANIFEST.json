@@ -1,0 +1,163 @@
+{
+  "package": "RCA Graph Extractor v2",
+  "package_version": "rca-v2.0-draft-for-Linux-validation",
+  "generated_at_utc": "2026-10-21",
+  "source_language_adapter": "C/C++ via Clang/LibClang",
+  "validation": {
+    "python_syntax": "passed",
+    "pytest": "10 passed",
+    "clang_ast_end_to_end": "not run in this Windows/container environment because clang.cindex is unavailable",
+    "neo4j_integration": "not included or run"
+  },
+  "span_node_in_extractor": false,
+  "writes_neo4j": false,
+  "ground_truth_used_during_extraction": false,
+  "original_legacy_extractor_unchanged": true,
+  "files": [
+    {
+      "path": "BASELINE_COMPATIBILITY.md",
+      "size_bytes": 1017,
+      "sha256": "7c1a0e58339ee7a4f9a215e00a74893af4e1c69ef05b1f2f2972019d624227a9"
+    },
+    {
+      "path": "GRAPH_MODEL_SCHEMA_V2.md",
+      "size_bytes": 5522,
+      "sha256": "d3d600273076e6d4b06f73cf58846ed05be9e6555c024b308feb2efd29f2b448"
+    },
+    {
+      "path": "MULTI_LANGUAGE_ADAPTER_CONTRACT.md",
+      "size_bytes": 2500,
+      "sha256": "d8183b675ad2a20206cc8ba3eb43878e8ef7ed624305ab25e2d2cfaa76033103"
+    },
+    {
+      "path": "README_RCA_EXTRACTOR_V2.md",
+      "size_bytes": 16889,
+      "sha256": "33b216176f18ca1ddf5f28dd46d6ea2ad42f3a7bd94631426655ace89dba1c1e"
+    },
+    {
+      "path": "README_graph_extractor.md",
+      "size_bytes": 20972,
+      "sha256": "efdb839e5974f715541ea1b0690b366339c56937789f12fed48b87c16868b8e9"
+    },
+    {
+      "path": "check_graph_vs_truth.py",
+      "size_bytes": 10649,
+      "sha256": "c3e359cd5418a4c9cb91c1ed525610f633ccb570fcbe0d2483430b92c6df423a"
+    },
+    {
+      "path": "docs/ACCEPTANCE_CHECKLIST.md",
+      "size_bytes": 2279,
+      "sha256": "a58d17c1bf8daa407f97d4f4fb39a48143b736186ccc6918a1f4882e2a622b2f"
+    },
+    {
+      "path": "docs/GRAPH_EXTRACTION_GAP_ANALYSIS.md",
+      "size_bytes": 9513,
+      "sha256": "ba0ae6a7847b1488cd1e1253e5df3d38616318bb443b3138a87b05262b83e42d"
+    },
+    {
+      "path": "extract_functions.py",
+      "size_bytes": 14308,
+      "sha256": "84673db6cfed01f03ac9459eabb152a99951f5649fa2e20ce538e46cfa24a235"
+    },
+    {
+      "path": "extract_functions_step1_working.py",
+      "size_bytes": 14308,
+      "sha256": "84673db6cfed01f03ac9459eabb152a99951f5649fa2e20ce538e46cfa24a235"
+    },
+    {
+      "path": "extract_graph.py",
+      "size_bytes": 39063,
+      "sha256": "505041223ee1d80613fc6164f560b6a0d9d6307f0de6e9eb0101c90aa37cc0c8"
+    },
+    {
+      "path": "extract_graph_fields_backup.py",
+      "size_bytes": 39063,
+      "sha256": "505041223ee1d80613fc6164f560b6a0d9d6307f0de6e9eb0101c90aa37cc0c8"
+    },
+    {
+      "path": "extract_graph_rca_v2.py",
+      "size_bytes": 111600,
+      "sha256": "c979bf154d0946e25d15755c31471545b7b72188a4c46a9a19104dd14c21aa59"
+    },
+    {
+      "path": "extract_graph_step2_calls_working.py",
+      "size_bytes": 24937,
+      "sha256": "e7fe2c7841d097569d08d5529ef485358405568e45c71369a89f440d73518cc8"
+    },
+    {
+      "path": "extract_graph_step3_fields.py",
+      "size_bytes": 39063,
+      "sha256": "505041223ee1d80613fc6164f560b6a0d9d6307f0de6e9eb0101c90aa37cc0c8"
+    },
+    {
+      "path": "extract_graph_step3_fields_working.py",
+      "size_bytes": 42938,
+      "sha256": "23221f4f4147ae9a8e3c51031c401d29f384264730fe2d74af16dc39ee014f2b"
+    },
+    {
+      "path": "extract_graph_step3_fields_working.py.backup_dserver",
+      "size_bytes": 41640,
+      "sha256": "f2fadd52cd2bdaca0874792608fd297a2e31366981915a74aa94048d68279892"
+    },
+    {
+      "path": "extract_repository_graph.py",
+      "size_bytes": 64721,
+      "sha256": "f61d57e96772ac89abfd7efe9d45c2cd336737973b7f2987868e8d118a73b85c"
+    },
+    {
+      "path": "extract_repository_graph_before_resume_support.py",
+      "size_bytes": 64721,
+      "sha256": "f61d57e96772ac89abfd7efe9d45c2cd336737973b7f2987868e8d118a73b85c"
+    },
+    {
+      "path": "extract_repository_graph_rca_v2.py",
+      "size_bytes": 29304,
+      "sha256": "3b01242c68f3f7c45dd3d0ffe2aba9e6327f16181a41f3a465958f20132d11da"
+    },
+    {
+      "path": "extract_repository_graph_resumable.py",
+      "size_bytes": 14125,
+      "sha256": "32638ddf09c119a8e2f3bb412911c67443f97ced20507266025616f75ac9cba0"
+    },
+    {
+      "path": "extract_repository_graph_runner_working.py",
+      "size_bytes": 64721,
+      "sha256": "f61d57e96772ac89abfd7efe9d45c2cd336737973b7f2987868e8d118a73b85c"
+    },
+    {
+      "path": "extract_tu_worker.py",
+      "size_bytes": 4235,
+      "sha256": "2250c9c48fb457e871ad3fe48501cb8f51a22c6387fa4c479ec2e0c6f55e88f8"
+    },
+    {
+      "path": "extract_tu_worker_rca_v2.py",
+      "size_bytes": 5449,
+      "sha256": "f0fedf179688ee9714a243cc598ad4766fa490cc7d9b644e3dd7d2b663dbacd8"
+    },
+    {
+      "path": "rca_graph_schema_v2.json",
+      "size_bytes": 8652,
+      "sha256": "08d6b0a484161fae659d6ffd8b714b759fec0f6d6e2c104630c6e3a5fc7b6156"
+    },
+    {
+      "path": "tests/test_extractor_contract.py",
+      "size_bytes": 16718,
+      "sha256": "67d547614b4ae2322c359f41904d56ae46e35e7ecb0fadca26c4c48585fa58f6"
+    },
+    {
+      "path": "thread_api_config.json",
+      "size_bytes": 5806,
+      "sha256": "4eeab74b53776cd53f1d271d7be4c62ce0d8e2694831af28fec0d8eb2591ffb4"
+    },
+    {
+      "path": "tools/check_graph_vs_truth.py",
+      "size_bytes": 356,
+      "sha256": "262ef52edda8ec4e0153a18ac39c4ba096dbd993347bd50e5963d3703e1398c8"
+    },
+    {
+      "path": "tools/validate_extraction_artifacts.py",
+      "size_bytes": 12897,
+      "sha256": "213903e66ef7c0e2b1286cbc81ce3ba25ddc842c0978bf967e29212bbd912b3f"
+    }
+  ]
+}
