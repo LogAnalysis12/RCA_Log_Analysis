@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import argparse
 import csv
 import hashlib
@@ -427,9 +429,9 @@ def main() -> None:
             )
 
         # Rebuild merged artifacts after every unit. This makes partial progress usable.
-        merge_successful_checkpoints(checkpoint_files, output_directory, repository_root.name, started_at)
+        merge_successful_checkpoints(checkpoint_files, output_directory, os.environ.get("GRAPH_REPOSITORY_ID", os.environ.get("GRAPH_REPOSITORY_ID", repository_root.name)), started_at)
 
-    report = merge_successful_checkpoints(checkpoint_files, output_directory, repository_root.name, started_at)
+    report = merge_successful_checkpoints(checkpoint_files, output_directory, os.environ.get("GRAPH_REPOSITORY_ID", os.environ.get("GRAPH_REPOSITORY_ID", repository_root.name)), started_at)
     report["available_translation_units"] = available_translation_unit_count
     report["selected_translation_units"] = selected_translation_unit_count
     report["limit_argument"] = args.limit

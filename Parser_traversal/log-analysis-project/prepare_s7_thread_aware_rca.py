@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +28,32 @@ FINGERPRINT = "fp_s7_premature_resource_release_thread_aware"
 def fail(message: str, code: int = 1) -> None:
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(code)
+
+
+def extract_logged_function(raw_line: str) -> str | None:
+    """Extract the worker function actually named in an S7 error log line."""
+    match = re.search(
+        r"\b([A-Za-z_]\w*(?:::[A-Za-z_]\w*)+)\s+" + re.escape(ERROR_MESSAGE),
+        raw_line,
+    )
+    return match.group(1) if match else None
+
+
+def select_representative_line(
+    matching_lines: list[tuple[int, str]], preferred_function: str
+) -> tuple[int, str]:
+    """Choose a raw event for the requested anchor, never the first message-only match."""
+    for line_number, raw_line in matching_lines:
+        if extract_logged_function(raw_line) == preferred_function:
+            return line_number, raw_line
+    observed = sorted({
+        function for _, raw_line in matching_lines
+        if (function := extract_logged_function(raw_line)) is not None
+    })
+    raise ValueError(
+        f"No error log record names preferred representative function {preferred_function!r}. "
+        f"Functions present in matching records: {observed}. Refusing to create inconsistent issue metadata."
+    )
 
 
 def main() -> int:
@@ -144,7 +172,29 @@ def main() -> int:
                 matching_lines.append((line_number, line.rstrip("\r\n")))
     if not matching_lines:
         fail(f"Expected S7 error message was not found in {LOG_PATH}; no files written.")
-    log_line_number, raw_log_line = matching_lines[0]
+
+    # Every occurrence must retain its actual worker identity. Select the event
+    # matching the analysis anchor instead of taking the first message match.
+    unparsed_lines = [
+        (line_number, raw_line)
+        for line_number, raw_line in matching_lines
+        if extract_logged_function(raw_line) is None
+    ]
+    if unparsed_lines:
+        fail(
+            "Could not extract the logged function from matching error records; "
+            f"examples={unparsed_lines[:3]}. No issue/config files written."
+        )
+    try:
+        log_line_number, raw_log_line = select_representative_line(
+            matching_lines, ANCHOR_NAME
+        )
+    except ValueError as exc:
+        fail(f"{exc} No issue/config files written.")
+
+    affected_function_counts = Counter(
+        extract_logged_function(raw_line) for _, raw_line in matching_lines
+    )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_dir = PROJECT / "output" / f"s7_thread_aware_test_{timestamp}"
@@ -152,10 +202,16 @@ def main() -> int:
     config_path = PROJECT / f"config.s7_thread_aware_{timestamp}.json"
     issues_path = run_dir / "resolved_issues_s7.json"
 
+    representative_function = extract_logged_function(raw_log_line)
+    if representative_function != ANCHOR_NAME:
+        fail(
+            "Internal consistency check failed: representative raw log line names "
+            f"{representative_function!r}, expected {ANCHOR_NAME!r}. No files written."
+        )
     representative_error = {
         "level": "ERROR",
         "message": ERROR_MESSAGE,
-        "qualified_function": ANCHOR_NAME,
+        "qualified_function": representative_function,
         "relative_path": relative_path,
         "log_file": str(LOG_PATH),
         "log_line_number": log_line_number,
@@ -167,6 +223,10 @@ def main() -> int:
         "qualified_function": ANCHOR_NAME,
         "normalized_message": ERROR_MESSAGE,
         "representative_error": representative_error,
+        "affected_functions": [
+            {"qualified_function": function, "occurrence_count": count}
+            for function, count in sorted(affected_function_counts.items())
+        ],
         "anchor_resolution": {
             "status": "RESOLVED",
             "match_method": "exact_qualified_name_and_source_file_verified_by_hash",

@@ -90,26 +90,81 @@ def _cycles(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[
     return headers + first_prompt, cycles
 
 
-def trim_message_history(messages: list[dict[str, Any]], *, max_chars: int = 18000,
-                         keep_recent_cycles: int = 5) -> list[dict[str, Any]]:
-    """Bound history length while preserving tool-use/result pairing.
+def _compact_tool_result_messages(
+    messages: list[dict[str, Any]],
+    *,
+    max_result_chars: int = 4000,
+) -> list[dict[str, Any]]:
+    """Compact oversized tool-result text without mutating input messages."""
+    import copy
 
-    If one current cycle alone exceeds the budget, it is left intact rather than
-    corrupting the provider request. The caller may additionally compact tool outputs.
-    """
+    result = copy.deepcopy(messages)
+    limit = max(200, int(max_result_chars))
+    marker = "\n...[tool result compacted for context management]..."
+
+    def compact(text: str) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:max(1, limit - len(marker))] + marker
+
+    for message in result:
+        if message.get("role") == "tool":
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = compact(content)
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and isinstance(block.get("text"), str):
+                        block["text"] = compact(block["text"])
+
+        content = message.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                tool_result = block.get("toolResult")
+                if not isinstance(tool_result, dict):
+                    continue
+                items = tool_result.get("content")
+                if isinstance(items, str):
+                    tool_result["content"] = compact(items)
+                elif isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and isinstance(item.get("text"), str):
+                            item["text"] = compact(item["text"])
+
+    return result
+
+
+def trim_message_history(
+    messages: list[dict[str, Any]],
+    *,
+    max_chars: int = 18000,
+    keep_recent_cycles: int = 5,
+    max_result_chars: int = 4000,
+) -> list[dict[str, Any]]:
+    """Trim old cycles and compact large tool results while preserving tool pairing."""
     max_chars = max(2000, int(max_chars))
-    headers, cycles = _cycles(messages)
-    if sum(_chars(m) for m in messages) <= max_chars:
-        return messages
+
+    # Work on a copy. Never mutate the backend's original message objects in place.
+    compacted = _compact_tool_result_messages(
+        messages,
+        max_result_chars=max_result_chars,
+    )
+    headers, cycles = _cycles(compacted)
+
+    if sum(_chars(m) for m in compacted) <= max_chars:
+        return compacted
+
     kept = cycles[-max(1, int(keep_recent_cycles)):]
     result = list(headers)
     result.extend(m for cycle in kept for m in cycle)
-    # Prefer preserving newest coherent history if system + original task + recent
-    # cycles still exceed max_chars. Remove oldest whole cycles only.
+
+    # Drop oldest complete cycles first.
     while len(kept) > 1 and sum(_chars(m) for m in result) > max_chars:
         kept.pop(0)
         result = list(headers) + [m for cycle in kept for m in cycle]
-    if sum(_chars(m) for m in result) > max_chars:
-        # Don't discard an unmatched tool exchange; returning it intact is safer.
-        return messages
+
+    # If a single current cycle remains oversized, preserve the compacted cycle.
+    # Do not revert to the original, potentially much larger history.
     return result

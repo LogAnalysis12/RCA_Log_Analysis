@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import argparse
 import importlib.util
 import json
@@ -81,7 +83,7 @@ def main() -> None:
             "location": str(diagnostic.location) if diagnostic.location else None,
         } for diagnostic in translation_unit.diagnostics]
         diagnostic_summary = extractor.classify_diagnostics(diagnostics, repository_root)
-        repository_id = repository_root.name
+        repository_id = os.environ.get("GRAPH_REPOSITORY_ID", os.environ.get("GRAPH_REPOSITORY_ID", repository_root.name))
         functions = extractor.extract_functions(translation_unit.cursor, repository_root, repository_id)
         calls = extractor.extract_calls(translation_unit.cursor, repository_root, repository_id)
         fields, accesses = extractor.extract_field_accesses(translation_unit.cursor, repository_root, repository_id)

@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import extract_graph_step3_fields_working as base
+
+# Worker compatibility: the resumable RCA v2 worker expects this helper
+# on the loaded extractor module. Delegate to the existing base implementation.
+def sanitize_compile_arguments(arguments, source_file):
+    return base.sanitize_compile_arguments(arguments, source_file)
+
+
 from clang import cindex
 
 
@@ -1900,3 +1907,8 @@ def extract_rca_evidence(cursor: Any, repository_root: Path, repository_id: str,
             unique[str(dedupe_key)] = rec
         results[key] = sorted(unique.values(), key=lambda r: (str(r.get("relative_path", "")), int(r.get("line", r.get("call_line", 0)) or 0), str(r.get("event_id", r.get("spawn_id", r.get("variable_id", ""))))))
     return results
+
+
+def __getattr__(name):
+    """Delegate missing helper APIs to the base extractor."""
+    return getattr(base, name)

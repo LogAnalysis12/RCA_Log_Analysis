@@ -206,6 +206,59 @@ class BedrockBackend:
         )
 
 
+def _rate_limit_wait_seconds(error: Exception) -> float | None:
+    """Extract a safe retry delay from a rate-limit response.
+
+    Returns None when the provider gives no usable delay, or when the
+    error suggests a daily quota rather than a temporary rate limit.
+    """
+    import re
+
+    message = str(error)
+
+    if re.search(
+        r"requests?\s*(?:per|/)\s*day|per-day|quota.*daily|daily.*quota",
+        message,
+        re.IGNORECASE,
+    ):
+        return None
+
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+
+    if headers:
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        if value is not None:
+            try:
+                delay = float(value)
+                if 0 < delay <= 60:
+                    return delay
+            except (TypeError, ValueError):
+                pass
+
+    match = re.search(
+        r"(?:retry|try again)\s+(?:in|after)\s+"
+        r"(\d+(?:\.\d+)?)\s*(milliseconds?|ms|seconds?|secs?|s)\b",
+        message,
+        re.IGNORECASE,
+    )
+
+    if not match:
+        return None
+
+    delay = float(match.group(1))
+    unit = match.group(2).lower()
+
+    if unit in ("ms", "millisecond", "milliseconds"):
+        delay /= 1000.0
+
+    if 0 < delay <= 60:
+        return delay
+
+    # Do not retry early if the provider asks for more than 60 seconds.
+    return None
+
+
 class LocalOpenAICompatibleBackend:
     """Optional local backend for any OpenAI-compatible chat server."""
 
@@ -224,12 +277,16 @@ class LocalOpenAICompatibleBackend:
         http_transport: Any = None,
     ) -> None:
         import openai
+        import os
 
         if not base_url:
             raise ValueError("LLM_BASE_URL is required when LLM_PROVIDER=local.")
         client_options: dict[str, Any] = {
             "api_key": api_key or "not-needed-for-local",
             "base_url": base_url,
+            # Let our code handle 429 responses, instead of hidden SDK retries.
+            "max_retries": 0,
+            "timeout": float(os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "120")),
         }
         if trace_recorder is not None:
             import httpx
@@ -254,6 +311,7 @@ class LocalOpenAICompatibleBackend:
         self.temperature = temperature
         self.messages: list[dict[str, Any]] = []
         self.history_config = history_config or {}
+        self._last_request_started = 0.0
         if system_prompt:
             self.messages.append({"role": "system", "content": system_prompt})
 
@@ -290,13 +348,75 @@ class LocalOpenAICompatibleBackend:
                 max_chars=int(self.history_config.get("max_chars", 24000)),
                 keep_recent_cycles=int(self.history_config.get("keep_recent_cycles", 4)),
             )
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,
-            tools=self.tools or None,
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
+        import openai
+        import os
+        import time
+
+        minimum_interval = max(
+            0.0,
+            float(os.environ.get("LLM_MIN_REQUEST_INTERVAL_SECONDS", "0")),
         )
+        response = None
+
+        # Three attempts maximum: the original request plus at most two
+        # retries, and only when the provider supplies a temporary wait.
+        for attempt in range(3):
+            if minimum_interval > 0 and self._last_request_started > 0:
+                elapsed = time.monotonic() - self._last_request_started
+                remaining = minimum_interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
+
+            self._last_request_started = time.monotonic()
+
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self.messages,
+                    tools=self.tools or None,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                )
+                break
+            except openai.RateLimitError as exc:
+                # Rate limits are retried only when the provider supplies
+                # a safe, temporary retry delay. Daily quota failures stop.
+                delay = _rate_limit_wait_seconds(exc)
+                if attempt >= 2 or delay is None:
+                    raise
+
+                time.sleep(delay)
+
+            except openai.APIStatusError as exc:
+                # Retry only transient server errors. Authentication,
+                # validation, and other non-transient errors fail immediately.
+                if exc.status_code not in (500, 502, 503, 504):
+                    raise
+
+                if attempt >= 2:
+                    raise
+
+                # Prefer a valid Retry-After header when present.
+                # Otherwise use bounded exponential backoff: 1s, then 2s.
+                retry_after = None
+                headers = getattr(exc.response, "headers", None)
+                if headers:
+                    value = headers.get("retry-after")
+                    if value is not None:
+                        try:
+                            parsed = float(value)
+                            if 0 < parsed <= 30:
+                                retry_after = parsed
+                        except (TypeError, ValueError):
+                            pass
+
+                delay = retry_after if retry_after is not None else min(
+                    2 ** attempt, 4
+                )
+                time.sleep(delay)
+
+        if response is None:
+            raise RuntimeError("LLM request finished without a response.")
         message = response.choices[0].message
         self.messages.append(message.model_dump(exclude_none=True))
 

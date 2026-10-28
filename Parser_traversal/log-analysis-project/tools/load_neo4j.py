@@ -79,7 +79,6 @@ def build_graph_data(root: Path) -> dict[str, Any]:
             node_id="Function:" + function_id,
             start_line=_integer(source, "start_line"),
             end_line=_integer(source, "end_line"),
-            source_code=code,
             source_available=bool(code.strip()),
             definition_available=True,
             extraction_status="EXTRACTED",

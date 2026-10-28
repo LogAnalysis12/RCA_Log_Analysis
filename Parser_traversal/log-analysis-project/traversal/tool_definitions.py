@@ -42,6 +42,21 @@ TOOLS = [
         },
     },
     {
+        "name": "find_worker_launchers",
+        "description": (
+            "Find which function or functions launch this worker through "
+            "Function -> ThreadSpawn -> Function SPAWNS_THREAD relationships. "
+            "Use when a worker's launcher is unknown. This is the reverse of "
+            "find_spawned_workers and differs from ordinary find_callers."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"function_id": {"type": "string"}},
+            "required": ["function_id"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": "list_fields_read",
         "description": "List relevant non-logging DataField nodes read by a function.",
         "parameters": {
@@ -92,3 +107,21 @@ TOOLS = [
         },
     },
 ]
+
+
+# Optional rationale metadata for persistent investigation decisions.
+# The investigator removes this field before invoking the actual graph tool.
+INVESTIGATION_DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "why_this_step": {"type": "string"},
+        "question_to_resolve": {"type": "string"},
+        "expected_evidence": {"type": "string"},
+        "backtrack_reason": {"type": "string"},
+    },
+    "additionalProperties": False,
+}
+
+for _tool in TOOLS:
+    if _tool["name"] != "propose_conclusion":
+        _tool["parameters"]["properties"]["decision"] = INVESTIGATION_DECISION_SCHEMA

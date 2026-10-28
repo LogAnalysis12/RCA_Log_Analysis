@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -29,14 +31,40 @@ class BudgetManager:
         self.max_output = int(config.get("max_total_output_tokens", 15_000))
         self.max_total = int(config.get("max_total_tokens", 115_000))
         self.max_cost = float(config.get("max_estimated_cost_usd", 0.35))
-        self.input_rate = float(pricing.get("input_per_million_tokens_usd", 3.30))
-        self.output_rate = float(pricing.get("output_per_million_tokens_usd", 16.50))
+        self.input_rate = float(
+            pricing.get("input_per_million_tokens_usd", 3.30)
+        )
+        self.output_rate = float(
+            pricing.get("output_per_million_tokens_usd", 16.50)
+        )
         self.state = BudgetState()
 
     def before_call(self) -> None:
         if self.state.bedrock_calls >= self.max_calls:
             raise BudgetExceeded("MAX_BEDROCK_CALLS")
         self._check_usage()
+
+    def output_allowance(self, requested: int, estimated_input: int = 0) -> int:
+        """Return the maximum output allowed by remaining budgets."""
+        remaining_output = self.max_output - self.state.output_tokens
+        remaining_total = self.max_total - self.state.total_tokens - estimated_input
+
+        allowance = min(requested, remaining_output, remaining_total)
+        if allowance <= 0:
+            raise BudgetExceeded("OUTPUT_BUDGET_EXHAUSTED")
+
+        return allowance
+
+    def check_estimated_input(self, estimated_tokens: int) -> None:
+        """Reject a request when its estimated input exceeds remaining budget."""
+        remaining_input = self.max_input - self.state.input_tokens
+        remaining_total = self.max_total - self.state.total_tokens
+
+        if estimated_tokens >= remaining_input:
+            raise BudgetExceeded("ESTIMATED_INPUT_BUDGET_EXHAUSTED")
+
+        if estimated_tokens >= remaining_total:
+            raise BudgetExceeded("ESTIMATED_TOTAL_BUDGET_EXHAUSTED")
 
     def after_call(self, usage: dict[str, int], role: str) -> None:
         self.state.bedrock_calls += 1
@@ -48,6 +76,7 @@ class BudgetManager:
         call_input = int(usage.get("input_tokens", 0))
         call_output = int(usage.get("output_tokens", 0))
         call_total = int(usage.get("total_tokens", call_input + call_output))
+
         self.state.input_tokens += call_input
         self.state.output_tokens += call_output
         self.state.total_tokens += call_total
@@ -63,7 +92,11 @@ class BudgetManager:
             (self.state.input_tokens, self.max_input, "MAX_TOTAL_INPUT_TOKENS"),
             (self.state.output_tokens, self.max_output, "MAX_TOTAL_OUTPUT_TOKENS"),
             (self.state.total_tokens, self.max_total, "MAX_TOTAL_TOKENS"),
-            (self.state.estimated_cost_usd, self.max_cost, "MAX_ESTIMATED_COST_USD"),
+            (
+                self.state.estimated_cost_usd,
+                self.max_cost,
+                "MAX_ESTIMATED_COST_USD",
+            ),
         )
         for actual, maximum, reason in limits:
             if actual >= maximum:
@@ -79,14 +112,40 @@ class BudgetedBackend:
         self.manager = manager
         self.role = role
 
-    def send(self, content):
+    def _prepare_call(self, pending: Any) -> int:
         self.manager.before_call()
-        result = self.backend.send(content)
-        self.manager.after_call(result.usage, self.role)
-        return result
+
+        messages = list(getattr(self.backend, "messages", []) or [])
+        candidate = messages + [{"role": "user", "content": pending}]
+
+        serialized = json.dumps(candidate, ensure_ascii=False, default=str)
+        # Conservative approximation, not an exact model tokenizer count.
+        estimated_input = math.ceil(len(serialized) / 3)
+        self.manager.check_estimated_input(estimated_input)
+
+        requested = int(getattr(self.backend, "max_tokens", 2048))
+        allowance = self.manager.output_allowance(requested, estimated_input)
+        self.backend.max_tokens = allowance
+        return allowance
+
+    def send(self, content):
+        original_max_tokens = getattr(self.backend, "max_tokens", None)
+        try:
+            self._prepare_call(content)
+            result = self.backend.send(content)
+            self.manager.after_call(result.usage, self.role)
+            return result
+        finally:
+            if original_max_tokens is not None:
+                self.backend.max_tokens = original_max_tokens
 
     def send_tool_results(self, results):
-        self.manager.before_call()
-        result = self.backend.send_tool_results(results)
-        self.manager.after_call(result.usage, self.role)
-        return result
+        original_max_tokens = getattr(self.backend, "max_tokens", None)
+        try:
+            self._prepare_call(results)
+            result = self.backend.send_tool_results(results)
+            self.manager.after_call(result.usage, self.role)
+            return result
+        finally:
+            if original_max_tokens is not None:
+                self.backend.max_tokens = original_max_tokens

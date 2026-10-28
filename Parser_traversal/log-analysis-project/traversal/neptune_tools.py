@@ -368,6 +368,88 @@ class NeptuneTraversalTools:
             "truncated": len(rows) >= safe_limit,
         }
 
+
+    def find_worker_launchers(
+        self, function_id: str, limit: int = 100
+    ) -> dict[str, Any]:
+        """Find functions that launch a worker through ThreadSpawn nodes."""
+        worker_id = ensure_function_id(function_id)
+        safe_limit = max(1, min(int(limit), 300))
+
+        rows = self._execute(
+            """
+            MATCH (launcher:Function)-[r1:SPAWNS_THREAD]->(spawn:ThreadSpawn)
+                  -[r2:SPAWNS_THREAD]->(worker:Function)
+            WHERE worker.node_id = $id
+            WITH launcher, spawn, worker, properties(spawn) AS sp,
+                 properties(r1) AS launcher_spawn_props,
+                 properties(r2) AS spawn_worker_props
+            RETURN worker.node_id AS worker_neptune_node_id,
+                   worker.qualified_name AS worker_qualified_name,
+                   launcher.node_id AS launcher_neptune_node_id,
+                   launcher.qualified_name AS launcher_qualified_name,
+                   launcher.function_name AS launcher_function_name,
+                   launcher.class_name AS launcher_class_name,
+                   launcher.signature AS launcher_signature,
+                   launcher.relative_path AS launcher_relative_path,
+                   launcher.start_line AS launcher_start_line,
+                   launcher.end_line AS launcher_end_line,
+                   launcher.content_hash AS launcher_content_hash,
+                   coalesce(sp["line"], sp["call_line"], sp["start_line"]) AS spawn_line,
+                   coalesce(sp["relative_path"], sp["file"], sp["source_file"]) AS spawn_relative_path,
+                   coalesce(sp["expression"], sp["call_expression"], sp["thread_expression"]) AS spawn_expression,
+                   sp AS spawn_evidence,
+                   launcher_spawn_props AS launcher_spawn_relationship_properties,
+                   spawn_worker_props AS spawn_worker_relationship_properties
+            ORDER BY launcher_relative_path, spawn_line, launcher_neptune_node_id
+            LIMIT $limit
+            """,
+            {"id": worker_id, "limit": safe_limit},
+        )
+
+        launchers = []
+        for row in rows:
+            node_id = str(row.get("launcher_neptune_node_id") or "")
+            launchers.append({
+                "function_id": strip_id_space(node_id),
+                "neptune_node_id": node_id,
+                "qualified_name": row.get("launcher_qualified_name", ""),
+                "function_name": row.get("launcher_function_name", ""),
+                "class_name": row.get("launcher_class_name", ""),
+                "signature": row.get("launcher_signature", ""),
+                "relative_path": row.get("launcher_relative_path", ""),
+                "start_line": row.get("launcher_start_line"),
+                "end_line": row.get("launcher_end_line"),
+                "content_hash": row.get("launcher_content_hash", ""),
+                "spawn_site": {
+                    "relative_path": (
+                        row.get("spawn_relative_path")
+                        or row.get("launcher_relative_path", "")
+                    ),
+                    "line": row.get("spawn_line"),
+                    "expression": row.get("spawn_expression", ""),
+                    "evidence": row.get("spawn_evidence") or {},
+                    "launcher_to_spawn_relationship": (
+                        row.get("launcher_spawn_relationship_properties") or {}
+                    ),
+                    "spawn_to_worker_relationship": (
+                        row.get("spawn_worker_relationship_properties") or {}
+                    ),
+                },
+            })
+
+        return {
+            "status": "OK",
+            "worker_function_id": strip_id_space(worker_id),
+            "worker_neptune_node_id": worker_id,
+            "worker_qualified_name": (
+                rows[0].get("worker_qualified_name", "") if rows else ""
+            ),
+            "launcher_count": len(launchers),
+            "launchers": launchers,
+            "truncated": len(rows) >= safe_limit,
+        }
+
     def find_fields_read(self, function_id: str, limit: int = 200, include_ignored: bool = False) -> dict[str, Any]:
         node_id = ensure_function_id(function_id)
         rows = self._execute(

@@ -89,6 +89,16 @@ def compact_tool_result(
             "numbered_source": numbered_source,
             "source_truncated": truncated,
         }
+
+        # Preserve the cache signal and continuation guidance. Without these
+        # fields, the model sees the source but is not told it was a replay.
+        if result.get("cache_hit"):
+            compact["cache_hit"] = True
+
+        continuation = result.get("continuation_instruction")
+        if continuation:
+            compact["continuation_instruction"] = continuation
+
     elif tool == "find_callers":
         compact = {
             "status": result.get("status"),

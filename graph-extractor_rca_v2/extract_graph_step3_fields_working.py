@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 from clang import cindex
+import re
 
 
 CALL_KINDS = {
@@ -237,6 +238,29 @@ def is_trackable_data_declaration(
         cindex.CursorKind.CLASS_TEMPLATE,
     }
 
+FIELD_MUTATING_METHODS = {
+    "reset", "release", "clear", "erase", "insert", "emplace",
+    "emplace_back", "emplace_front", "push", "push_back", "push_front",
+    "pop", "pop_back", "pop_front", "resize", "reserve", "assign",
+    "swap", "append", "replace", "remove", "remove_if", "add",
+    "store", "exchange", "compare_exchange_strong",
+    "compare_exchange_weak", "fetch_add", "fetch_sub", "fetch_and",
+    "fetch_or", "fetch_xor", "set", "update", "put", "delete", "write",
+    "unlock", "notify_all", "notify_one", "wait", "wait_for", "wait_until",
+    "join", "detach", "try_lock", "shrink_to_fit", "splice", "merge",
+    "sort", "reverse", "unique", "close", "flush", "start", "stop",
+}
+
+FIELD_READ_ONLY_METHODS = {
+    "get", "load", "size", "empty", "capacity", "max_size", "front",
+    "back", "at", "data", "c_str", "find", "contains", "count",
+    "equal_range", "lower_bound", "upper_bound", "begin", "cbegin",
+    "end", "cend", "rbegin", "crbegin", "rend", "crend", "key_comp",
+    "value_comp", "expired", "use_count", "owner_before", "has_value",
+    "value", "value_or", "is_lock_free",
+}
+
+
 def classify_field_access(
     field_cursor: cindex.Cursor,
     ancestors: list[cindex.Cursor],
@@ -309,14 +333,82 @@ def classify_field_access(
             return "READ_WRITE"
 
         if ancestor_kind == cindex.CursorKind.CALL_EXPR:
-            expression = cursor_expression(ancestor)
-            field_expression = cursor_expression(field_cursor)
+            # FIELD_ACCESS_CALL_CLASSIFICATION_V2
+            # Normalize whitespace because cursor token text may contain spaces.
+            expression = re.sub(
+                r"\s+", "", cursor_expression(ancestor)
+            )
+            field_expression = re.sub(
+                r"\s+", "", cursor_expression(field_cursor)
+            )
 
-            if (
-                f"&{field_expression}" in expression
-                or f"&({field_expression})" in expression
-            ):
-                return "POSSIBLE_WRITE"
+            if field_expression:
+                # Passing a field by address may allow the callee to mutate it.
+                if (
+                    f"&{field_expression}" in expression
+                    or f"&({field_expression})" in expression
+                ):
+                    return "POSSIBLE_WRITE"
+
+                # Detect a call on the field itself, e.g. current.reset()
+                # or values.push_back(x), rather than any call that merely
+                # mentions the field as an argument.
+                receiver_pattern = (
+                    r"(?<![A-Za-z0-9_])"
+                    + re.escape(field_expression)
+                    + r"(?:\.|->)([A-Za-z_]\w*)\("
+                )
+                receiver_match = re.search(receiver_pattern, expression)
+
+                if receiver_match:
+                    method_name = receiver_match.group(1)
+
+                    # Methods whose usual semantics mutate the receiver.
+                    if method_name in FIELD_MUTATING_METHODS:
+                        # Conservative classification: mutation can depend
+                        # on or replace the previous receiver state.
+                        return "READ_WRITE"
+
+                    # "lock" has different meanings. weak_ptr.lock() reads
+                    # the weak pointer; mutex.lock() changes lock state.
+                    try:
+                        field_type = field_cursor.type.spelling or ""
+                    except Exception:
+                        field_type = ""
+
+                    if (
+                        method_name == "lock"
+                        and "weak_ptr" in field_type
+                    ):
+                        return "READ"
+
+                    # Common read-only operations. This list is intentionally
+                    # explicit so they are not treated as writes just because
+                    # a non-const overload can return a mutable reference.
+                    if method_name in FIELD_READ_ONLY_METHODS:
+                        return "READ"
+
+                    # Use the declaration when Clang resolves the method.
+                    # A const method cannot directly mutate ordinary receiver
+                    # state; a non-const method may mutate it.
+                    try:
+                        referenced = ancestor.referenced
+                        if (
+                            referenced is not None
+                            and referenced.kind == cindex.CursorKind.CXX_METHOD
+                        ):
+                            const_check = getattr(
+                                referenced, "is_const_method", None
+                            )
+                            if callable(const_check) and const_check():
+                                return "READ"
+                            return "READ_WRITE"
+                    except Exception:
+                        pass
+
+                    # Unresolved calls on the field receiver remain visible
+                    # to writer searches instead of silently becoming READ.
+                    return "POSSIBLE_WRITE"
 
     return "READ"
 

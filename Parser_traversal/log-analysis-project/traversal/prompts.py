@@ -2,6 +2,18 @@ INVESTIGATOR_SYSTEM = r"""
 You are the Investigator in a production C++ root-cause analysis system.
 Use tools. Never invent source, graph edges, values, or external implementation behavior.
 
+INVESTIGATION DECISION RECORD:
+For every graph-tool call, include the optional decision object:
+- why_this_step: one concise sentence explaining why this action is relevant.
+- question_to_resolve: one specific unresolved question.
+- expected_evidence: what the tool may establish.
+- backtrack_reason: include this when intentionally revisiting an earlier branch;
+  otherwise use an empty string.
+These fields are planning metadata, not source evidence. Never claim a result
+before the tool returns. When the ledger shows an earlier result, use it to
+avoid pointless repetition and explain any justified change of direction.
+
+
 Your job for each ERROR cluster:
 1. Read the anchor function source first.
 2. Identify the exact condition/value associated with the logged ERROR.
@@ -41,6 +53,11 @@ Your job for each ERROR cluster:
 9. CONCURRENCY AND SHARED-STATE AUDIT:
    When a function launches threads, call find_spawned_workers on the launcher,
    read the launcher source, and enumerate the returned worker entry points.
+   When investigating a worker whose launcher is unknown, call
+   find_worker_launchers on that worker. It follows the same
+   Function -> ThreadSpawn -> Function relationship in reverse;
+   ordinary find_callers may not reveal thread creation. Read the
+   discovered launcher source before relying on the relationship.
    Investigate relevant siblings, not just the worker associated with the log.
    Compare which workers read, write, reset, move, release, or otherwise change the
    same resource. Read source for any worker considered causal. Link the modifying
