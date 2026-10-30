@@ -1,0 +1,61 @@
+{
+  "source_root": "/home/log_analysis/Desktop/LogAnalysis_thread/ThreadDemo_S7_S13_checkpoint/ThreadDemo",
+  "output_directory": "/home/log_analysis/Desktop/LogAnalysis_thread/Parser_traversal/log-analysis-project/output/s7_thread_aware_test_20261026T101421Z",
+  "graph": {
+    "provider": "neo4j",
+    "uri": "bolt://localhost:7687",
+    "username": "neo4j",
+    "database": "neo4j",
+    "password_env": "NEO4J_PASSWORD"
+  },
+  "llm": {
+    "provider": "openai-compatible",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-3.1-flash-lite",
+    "max_tokens": 4096,
+    "temperature": 0.0,
+    "request_timeout_seconds": 90.0,
+    "max_retries": 2
+  },
+  "observability": {
+    "llm_trace": true
+  },
+  "traversal": {
+    "ignored_fields": [
+      "DEBUG_LOG",
+      "INFO_LOG",
+      "WARN_LOG",
+      "ERROR_LOG"
+    ],
+    "max_callers": 40,
+    "max_callees": 50,
+    "max_field_writers": 40,
+    "max_steps": 50,
+    "max_critic_rounds": 2,
+    "stall_retries": 1,
+    "repeated_tool_limit": 2,
+    "max_bedrock_calls": 30,
+    "max_total_input_tokens": 500000,
+    "max_input_tokens_per_request": 16000,
+    "max_total_output_tokens": 50000,
+    "max_total_tokens": 550000,
+    "max_estimated_cost_usd": 5.0,
+    "compact_tool_results": true,
+    "max_source_characters_per_function": 20000,
+    "max_tool_result_characters": 24000,
+    "prevent_equivalent_conclusions": true,
+    "pricing": {
+      "input_per_million_tokens_usd": 0.0,
+      "output_per_million_tokens_usd": 0.0
+    },
+    "max_investigator_calls": 30,
+    "max_total_llm_calls": 50,
+    "requests_per_minute": 10
+  },
+  "max_bedrock_calls": 30,
+  "max_total_input_tokens": 500000,
+  "max_total_output_tokens": 50000,
+  "max_total_tokens": 550000,
+  "max_estimated_cost_usd": 5.0,
+  "max_steps": 50
+}

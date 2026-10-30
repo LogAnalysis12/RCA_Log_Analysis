@@ -89,6 +89,8 @@ def _normalize_user_content(content: Any) -> list[dict[str, Any]]:
 class BedrockBackend:
     """Amazon Bedrock backend using the provider-neutral Converse API."""
 
+    supports_attempt_budget_hook = True
+
     def __init__(
         self,
         model: str,
@@ -118,6 +120,9 @@ class BedrockBackend:
         self.system = [{"text": system_prompt}] if system_prompt else None
         self.messages: list[dict[str, Any]] = []
         self.history_config = history_config or {}
+        self._budget_before_attempt = None
+        self._budget_after_attempt = None
+        self._budget_before_request = None
 
     def send(self, user_content: Any) -> StepResult:
         self.messages.append(
@@ -173,7 +178,24 @@ class BedrockBackend:
         if self.system:
             request["system"] = self.system
 
-        response = self.client.converse(**request)
+        before_request = getattr(self, "_budget_before_request", None)
+        if before_request is not None:
+            from traversal.budget import estimate_input_tokens
+
+            before_request(estimate_input_tokens(request))
+        before_attempt = getattr(self, "_budget_before_attempt", None)
+        after_attempt = getattr(self, "_budget_after_attempt", None)
+        if before_attempt is not None:
+            before_attempt()
+        try:
+            response = self.client.converse(**request)
+        except Exception:
+            if after_attempt is not None:
+                after_attempt(False)
+            raise
+        else:
+            if after_attempt is not None:
+                after_attempt(True)
         assistant_message = response["output"]["message"]
         self.messages.append(assistant_message)
 
@@ -260,6 +282,7 @@ def _rate_limit_wait_seconds(error: Exception) -> float | None:
 
 
 class LocalOpenAICompatibleBackend:
+    supports_attempt_budget_hook = True
     """Optional local backend for any OpenAI-compatible chat server."""
 
     def __init__(
@@ -275,6 +298,8 @@ class LocalOpenAICompatibleBackend:
         trace_recorder: Any = None,
         stage: str = "unknown",
         http_transport: Any = None,
+        request_timeout_seconds: float | None = None,
+        max_retries: int | None = None,
     ) -> None:
         import openai
         import os
@@ -286,7 +311,7 @@ class LocalOpenAICompatibleBackend:
             "base_url": base_url,
             # Let our code handle 429 responses, instead of hidden SDK retries.
             "max_retries": 0,
-            "timeout": float(os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "120")),
+            "timeout": max(10.0, min(180.0, float(request_timeout_seconds if request_timeout_seconds is not None else os.environ.get("LLM_REQUEST_TIMEOUT_SECONDS", "90")))),
         }
         if trace_recorder is not None:
             import httpx
@@ -311,7 +336,12 @@ class LocalOpenAICompatibleBackend:
         self.temperature = temperature
         self.messages: list[dict[str, Any]] = []
         self.history_config = history_config or {}
+        self.trace_recorder = trace_recorder
+        self.stage = stage
         self._last_request_started = 0.0
+        self.max_retries = max(0, min(2, int(max_retries if max_retries is not None else os.environ.get("LLM_MAX_RETRIES", "2"))))
+        self._budget_before_attempt = None
+        self._budget_after_attempt = None
         if system_prompt:
             self.messages.append({"role": "system", "content": system_prompt})
 
@@ -357,10 +387,39 @@ class LocalOpenAICompatibleBackend:
             float(os.environ.get("LLM_MIN_REQUEST_INTERVAL_SECONDS", "0")),
         )
         response = None
+        request_payload = {
+            "model": self.model,
+            "messages": self.messages,
+            "tools": self.tools or None,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
+        before_request = getattr(self, "_budget_before_request", None)
+        if before_request is not None:
+            from traversal.budget import estimate_input_tokens
+
+            estimated_tokens = estimate_input_tokens(request_payload)
+            try:
+                before_request(estimated_tokens)
+            except Exception:
+                record_rejection = getattr(self, "_budget_record_rejection", None)
+                if record_rejection is not None:
+                    record_rejection(
+                        stage=getattr(self, "stage", "unknown"),
+                        model=self.model,
+                        estimated_input_tokens=estimated_tokens,
+                        input_limit=getattr(self.trace_recorder, "input_limit", None),
+                    )
+                raise
 
         # Three attempts maximum: the original request plus at most two
         # retries, and only when the provider supplies a temporary wait.
-        for attempt in range(3):
+        # object.__new__-constructed test doubles may not run __init__.
+        max_retries = max(
+            0,
+            min(2, int(getattr(self, "max_retries", os.environ.get("LLM_MAX_RETRIES", "2")))),
+        )
+        for attempt in range(max_retries + 1):
             if minimum_interval > 0 and self._last_request_started > 0:
                 elapsed = time.monotonic() - self._last_request_started
                 remaining = minimum_interval - elapsed
@@ -370,19 +429,32 @@ class LocalOpenAICompatibleBackend:
             self._last_request_started = time.monotonic()
 
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=self.messages,
-                    tools=self.tools or None,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                )
+                before_attempt = getattr(self, "_budget_before_attempt", None)
+                after_attempt = getattr(self, "_budget_after_attempt", None)
+
+                if before_attempt is not None:
+                    before_attempt()
+                try:
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self.messages,
+                        tools=self.tools or None,
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature,
+                    )
+                except Exception:
+                    if after_attempt is not None:
+                        after_attempt(False)
+                    raise
+                else:
+                    if after_attempt is not None:
+                        after_attempt(True)
                 break
             except openai.RateLimitError as exc:
                 # Rate limits are retried only when the provider supplies
                 # a safe, temporary retry delay. Daily quota failures stop.
                 delay = _rate_limit_wait_seconds(exc)
-                if attempt >= 2 or delay is None:
+                if attempt >= max_retries or delay is None:
                     raise
 
                 time.sleep(delay)
@@ -393,7 +465,7 @@ class LocalOpenAICompatibleBackend:
                 if exc.status_code not in (500, 502, 503, 504):
                     raise
 
-                if attempt >= 2:
+                if attempt >= max_retries:
                     raise
 
                 # Prefer a valid Retry-After header when present.
@@ -555,6 +627,8 @@ def get_backend(
             trace_recorder=trace_recorder,
             stage=stage,
             http_transport=http_transport,
+            request_timeout_seconds=config.get("request_timeout_seconds"),
+            max_retries=config.get("max_retries"),
         )
 
     raise ValueError(

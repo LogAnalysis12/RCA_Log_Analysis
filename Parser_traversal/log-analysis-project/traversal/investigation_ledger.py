@@ -91,6 +91,10 @@ class InvestigationLedger:
         *,
         status: str,
         result: dict[str, Any],
+        execution_status: str | None = None,
+        new_evidence: bool = False,
+        repeated_action: bool = False,
+        recovery_attempt: bool = False,
     ) -> None:
         # Summarize metadata only. Never persist source text or full tool output.
         summary_data = {
@@ -108,6 +112,10 @@ class InvestigationLedger:
             "event": "result",
             "step_id": step_id,
             "status": status,
+            "execution_status": execution_status or status,
+            "new_evidence": bool(new_evidence),
+            "repeated_action": bool(repeated_action),
+            "recovery_attempt": bool(recovery_attempt),
             "result_summary": _clean(
                 json.dumps(summary_data, ensure_ascii=False, default=str), 900
             ),
@@ -132,7 +140,11 @@ class InvestigationLedger:
             elif event.get("event") == "result":
                 lines.append(
                     f"  Result for step {event['step_id']}: "
-                    f"{event['status']}; {event.get('result_summary', '')}"
+                    f"{event['status']} ({event.get('execution_status', event['status'])}; "
+                    f"new_evidence={event.get('new_evidence', False)}; "
+                    f"repeated={event.get('repeated_action', False)}; "
+                    f"recovery={event.get('recovery_attempt', False)}); "
+                    f"{event.get('result_summary', '')}"
                 )
 
         rendered = "\n".join(lines)

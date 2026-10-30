@@ -65,6 +65,7 @@ class LLMTraceRecorder:
         self.model = model
         self.base_url = sanitize_base_url(base_url)
         self.pricing = pricing or {}
+        self.input_limit: int | None = None
         self.input_rate = self._pricing_rate("input_per_million_tokens_usd")
         self.output_rate = self._pricing_rate("output_per_million_tokens_usd")
         self._lock = threading.Lock()
@@ -201,6 +202,9 @@ class LLMTraceRecorder:
             response_payload, serialized_response = self._parse_payload(response_body)
 
         usage = self._reported_usage(response_payload)
+        from traversal.budget import estimate_input_tokens
+
+        estimated_input = estimate_input_tokens(request_payload) if request_payload is not None else None
         choices = response_payload.get("choices", []) if isinstance(response_payload, dict) else []
         choice = choices[0] if choices and isinstance(choices[0], dict) else {}
         assistant_message = choice.get("message") if isinstance(choice, dict) else None
@@ -223,6 +227,16 @@ class LLMTraceRecorder:
             "model": model,
             "base_url": self.base_url,
             "stage": stage,
+            "estimated_input_tokens": estimated_input,
+            "actual_input_tokens": usage.get("input_tokens") if usage else None,
+            "actual_output_tokens": usage.get("output_tokens") if usage else None,
+            "actual_total_tokens": usage.get("total_tokens") if usage else None,
+            "input_limit": self.input_limit,
+            "input_limit_exceeded": bool(
+                estimated_input is not None and self.input_limit is not None
+                and estimated_input > self.input_limit
+            ),
+            "rejected_before_provider_execution": False,
             "request_id": request_id,
             "request": {
                 "method": request_method,
@@ -243,9 +257,66 @@ class LLMTraceRecorder:
                 "source": "provider_reported" if usage else "unavailable",
                 "provider_reported": usage,
             },
+            "request_diagnostics": {
+                "estimated_input_tokens": estimated_input,
+                "actual_input_tokens": usage.get("input_tokens") if usage else None,
+                "actual_output_tokens": usage.get("output_tokens") if usage else None,
+                "actual_total_tokens": usage.get("total_tokens") if usage else None,
+                "input_limit": self.input_limit,
+                "input_limit_exceeded": bool(
+                    estimated_input is not None and self.input_limit is not None
+                    and estimated_input > self.input_limit
+                ),
+                "rejected_before_provider_execution": False,
+            },
             "duration_ms": duration_ms,
             "success": error is None and status_code is not None and 200 <= status_code < 300,
+            "actual_api_call": True,
             "cost": self._cost(usage),
+        }
+        self._write(record)
+
+    def record_preflight_rejection(
+        self,
+        *,
+        stage: str,
+        model: str,
+        estimated_input_tokens: int,
+        input_limit: int | None,
+    ) -> None:
+        call_index, timestamp, _ = self.begin_call()
+        record = {
+            "run_id": self.run_id,
+            "call_index": call_index,
+            "timestamp": timestamp,
+            "provider": self.provider,
+            "api_compatibility": self.api_compatibility,
+            "model": model,
+            "base_url": self.base_url,
+            "stage": stage,
+            "estimated_input_tokens": estimated_input_tokens,
+            "actual_input_tokens": None,
+            "actual_output_tokens": None,
+            "actual_total_tokens": None,
+            "input_limit": input_limit,
+            "input_limit_exceeded": input_limit is None or estimated_input_tokens > input_limit,
+            "rejected_before_provider_execution": True,
+            "request": {"method": None, "model": model, "payload": None, "serialized_body": None},
+            "response": {"http_status": None, "provider_response_id": None, "error": None},
+            "usage": {"source": "unavailable", "provider_reported": None},
+            "request_diagnostics": {
+                "estimated_input_tokens": estimated_input_tokens,
+                "actual_input_tokens": None,
+                "actual_output_tokens": None,
+                "actual_total_tokens": None,
+                "input_limit": input_limit,
+                "input_limit_exceeded": input_limit is None or estimated_input_tokens > input_limit,
+                "rejected_before_provider_execution": True,
+            },
+            "duration_ms": 0,
+            "success": False,
+            "actual_api_call": False,
+            "cost": self._cost(None),
         }
         self._write(record)
 
@@ -280,8 +351,21 @@ class LLMTraceRecorder:
     def write_summary(self) -> dict[str, Any]:
         with self._lock:
             records = list(self._records)
-        successful = [record for record in records if record["success"]]
-        failed = [record for record in records if not record["success"]]
+        actual_records = [record for record in records if record.get("actual_api_call", True)]
+        successful = [record for record in actual_records if record["success"]]
+        failed = [record for record in actual_records if not record["success"]]
+        diagnostics = [record.get("request_diagnostics", {}) for record in records]
+        estimates = [item["estimated_input_tokens"] for item in diagnostics if item.get("estimated_input_tokens") is not None]
+        actual_inputs = [item["actual_input_tokens"] for item in diagnostics if item.get("actual_input_tokens") is not None]
+        successful_actual_inputs = [
+            record["request_diagnostics"]["actual_input_tokens"] for record in successful
+            if record.get("request_diagnostics", {}).get("actual_input_tokens") is not None
+        ]
+        highest_record = max(
+            (record for record in records if record.get("request_diagnostics", {}).get("actual_input_tokens") is not None),
+            key=lambda record: record["request_diagnostics"]["actual_input_tokens"],
+            default=None,
+        )
         usages = [record["usage"]["provider_reported"] for record in records]
         available_input = [item["input_tokens"] for item in usages if item and item["input_tokens"] is not None]
         available_output = [item["output_tokens"] for item in usages if item and item["output_tokens"] is not None]
@@ -297,9 +381,23 @@ class LLMTraceRecorder:
             "api_compatibility": self.api_compatibility,
             "model": self.model,
             "base_url": self.base_url,
-            "actual_api_calls": len(records),
+            "actual_api_calls": len(actual_records),
             "successful_calls": len(successful),
             "failed_calls": len(failed),
+            "max_estimated_input_tokens_per_request": max(estimates) if estimates else None,
+            "max_actual_input_tokens_per_request": max(actual_inputs) if actual_inputs else None,
+            "average_actual_input_tokens_per_successful_request": (
+                sum(successful_actual_inputs) / len(successful_actual_inputs)
+                if successful_actual_inputs else None
+            ),
+            "requests_exceeding_estimate_limit": sum(
+                bool(item.get("input_limit_exceeded")) for item in diagnostics
+            ),
+            "requests_rejected_before_provider_execution": sum(
+                bool(item.get("rejected_before_provider_execution")) for item in diagnostics
+            ),
+            "highest_input_consumption_call_index": highest_record.get("call_index") if highest_record else None,
+            "highest_input_consumption_stage": highest_record.get("stage") if highest_record else None,
             "total_input_tokens": total_input if available_input else None,
             "total_output_tokens": total_output if available_output else None,
             "total_tokens": total_tokens,
@@ -316,7 +414,7 @@ class LLMTraceRecorder:
                 record["call_index"] for record in records
                 if record["cost"]["estimated_total_cost_usd"] is None
             ],
-            "total_model_call_duration_ms": round(sum(record["duration_ms"] for record in records), 3),
+            "total_model_call_duration_ms": round(sum(record["duration_ms"] for record in actual_records), 3),
             "per_call": [
                 {
                     "call_index": record["call_index"],
@@ -331,7 +429,7 @@ class LLMTraceRecorder:
                     "provider_response_id": record["response"]["provider_response_id"],
                     "error": record["response"]["error"],
                 }
-                for record in records
+                for record in actual_records
             ],
         }
         try:

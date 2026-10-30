@@ -143,6 +143,12 @@ def test_success_records_exact_request_response_usage_and_cost(tmp_path):
         "output_tokens": 5,
         "total_tokens": 17,
     }
+    assert record["estimated_input_tokens"] > 0
+    assert record["actual_input_tokens"] == 12
+    assert record["actual_output_tokens"] == 5
+    assert record["actual_total_tokens"] == 17
+    assert record["input_limit"] is None
+    assert record["input_limit_exceeded"] is False
     assert record["cost"]["estimated_total_cost_usd"] == pytest.approx(0.0001221)
 
     summary = recorder.write_summary()
@@ -151,6 +157,11 @@ def test_success_records_exact_request_response_usage_and_cost(tmp_path):
     assert summary["total_input_tokens"] == 12
     assert summary["total_output_tokens"] == 5
     assert summary["provider_reported_total_tokens"] == 17
+    assert summary["max_estimated_input_tokens_per_request"] == record["estimated_input_tokens"]
+    assert summary["max_actual_input_tokens_per_request"] == 12
+    assert summary["average_actual_input_tokens_per_successful_request"] == 12
+    assert summary["highest_input_consumption_call_index"] == 1
+    assert summary["highest_input_consumption_stage"] == "investigator"
     assert summary["model"] == MODEL
     assert json.loads(recorder.summary_path.read_text(encoding="utf-8"))["actual_api_calls"] == 1
 
@@ -168,6 +179,9 @@ def test_missing_provider_usage_is_unavailable_not_fabricated(tmp_path):
 
     assert result.usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     assert record["usage"] == {"source": "unavailable", "provider_reported": None}
+    assert record["actual_input_tokens"] is None
+    assert record["actual_output_tokens"] is None
+    assert record["actual_total_tokens"] is None
     assert record["cost"]["estimated_total_cost_usd"] is None
     assert summary["total_input_tokens"] is None
     assert summary["total_output_tokens"] is None
@@ -220,7 +234,7 @@ def test_call_indexes_track_each_http_request(tmp_path):
     ]
 
 
-def test_sdk_retry_attempts_are_each_traced(tmp_path):
+def test_sdk_retry_attempts_are_each_traced_and_budgeted(tmp_path, monkeypatch):
     request_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -232,8 +246,20 @@ def test_sdk_retry_attempts_are_each_traced(tmp_path):
 
     recorder = make_recorder(tmp_path)
     backend = make_backend(recorder, handler)
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    budget = BudgetManager({
+        "max_total_llm_calls": 5,
+        "max_investigator_calls": 5,
+        "max_total_input_tokens": 1000,
+        "max_total_output_tokens": 1000,
+        "max_total_tokens": 2000,
+        "max_input_tokens_per_request": 500,
+        "max_estimated_cost_usd": 10,
+        "requests_per_minute": 0,
+        "pricing": PRICING,
+    })
 
-    result = backend.send("Retry me")
+    result = BudgetedBackend(backend, budget, "investigator").send("Retry me")
     records = read_records(recorder.trace_path)
 
     assert result.text == "Captured reply"
@@ -241,6 +267,45 @@ def test_sdk_retry_attempts_are_each_traced(tmp_path):
     assert [record["call_index"] for record in records] == [1, 2]
     assert [record["success"] for record in records] == [False, True]
     assert recorder.write_summary()["actual_api_calls"] == 2
+    assert budget.state.bedrock_calls == 2
+    assert budget.state.failed_calls == 1
+    assert budget.state.successful_calls == 1
+
+
+def test_oversized_input_is_traced_without_provider_execution(tmp_path):
+    recorder = make_recorder(tmp_path)
+    requests = []
+    backend = make_backend(
+        recorder,
+        lambda request: requests.append(request) or httpx.Response(200, json=response_payload()),
+        stage="critic",
+    )
+    budget = BudgetManager({
+        "max_total_llm_calls": 5,
+        "max_investigator_calls": 5,
+        "max_total_input_tokens": 1000,
+        "max_total_output_tokens": 1000,
+        "max_total_tokens": 2000,
+        "max_input_tokens_per_request": 5,
+        "max_estimated_cost_usd": 10,
+        "requests_per_minute": 0,
+        "pricing": PRICING,
+    })
+
+    with pytest.raises(BudgetExceeded):
+        BudgetedBackend(backend, budget, "critic").send("too much input")
+
+    record = read_records(recorder.trace_path)[0]
+    summary = recorder.write_summary()
+    assert requests == []
+    assert budget.state.bedrock_calls == 0
+    assert record["stage"] == "critic"
+    assert record["input_limit"] == 5
+    assert record["input_limit_exceeded"] is True
+    assert record["rejected_before_provider_execution"] is True
+    assert record["actual_input_tokens"] is None
+    assert summary["actual_api_calls"] == 0
+    assert summary["requests_rejected_before_provider_execution"] == 1
 
 
 def test_factory_labels_investigator_and_critic(monkeypatch):
@@ -290,7 +355,11 @@ def test_budget_rejection_does_not_create_an_extra_trace_or_count_usage_twice(tm
     assert budget.state.bedrock_calls == 1
     assert budget.state.input_tokens == 3
     assert budget.state.output_tokens == 2
-    assert len(read_records(recorder.trace_path)) == 1
+    records = read_records(recorder.trace_path)
+    assert len(records) == 2
+    assert sum(record.get("actual_api_call", True) for record in records) == 1
+    assert records[1]["rejected_before_provider_execution"] is True
+    assert records[1]["actual_input_tokens"] is None
 
 
 def test_trace_artifacts_are_private_and_result_copy_keeps_legacy_shape(tmp_path):

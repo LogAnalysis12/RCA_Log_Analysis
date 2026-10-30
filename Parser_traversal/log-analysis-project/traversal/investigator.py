@@ -31,25 +31,33 @@ def _tool_key(name: str, data: dict[str, Any]) -> str:
     for key in ("function_id", "exclude_function_id"):
         if key in normalized:
             normalized[key] = canonical_function_id(normalized[key])
-    return f"{name}:{json.dumps(normalized, sort_keys=True, default=str)}"
+    normalized_name = str(name).strip().lower()
+    return f"{normalized_name}:{json.dumps(normalized, sort_keys=True, default=str)}"
 
 
 def _cached_source_replay(
     key: str,
     cached_source: dict[str, Any] | None,
-    replayed_cache_keys: set[str],
 ) -> dict[str, Any] | None:
-    """Return verified source from cache at most once per tool request."""
+    """Return hash-verified source from cache for an identical tool request."""
+    source = cached_source.get("source") if isinstance(cached_source, dict) else None
     if (
         cached_source is None
         or cached_source.get("status") != "SOURCE_VERIFIED"
-        or key in replayed_cache_keys
+        or not isinstance(source, dict)
+        or source.get("content_hash_matches") is not True
+        or not source.get("expected_content_hash")
+        or not source.get("computed_content_hash")
+        or source.get("expected_content_hash") != source.get("computed_content_hash")
     ):
         return None
 
-    replayed_cache_keys.add(key)
+    replay_source = dict(source)
+    replay_source.pop("numbered_source", None)
     return {
         **cached_source,
+        "source": replay_source,
+        "source_reused": True,
         "cache_hit": True,
         "continuation_instruction": (
             "This source was already verified earlier and is being returned "
@@ -123,7 +131,7 @@ def run_investigation(
 
     backend = backend_factory(system_prompt=INVESTIGATOR_SYSTEM, tools=TOOLS)
     repeats: Counter[str] = Counter()
-    replayed_cache_keys: set[str] = set()
+    verified_source_cache: dict[str, dict[str, Any]] = {}
     reviewed: dict[str, frozenset[str]] = {}
     critic_rejections = 0
     stalls = 0
@@ -188,6 +196,7 @@ def run_investigation(
 
             for call in step.tool_calls:
                 call_input = call.input if isinstance(call.input, dict) else {}
+                tool_name = str(call.name).strip().lower()
                 if "_invalid_json" in call_input:
                     raw_arguments = str(call_input.get("_invalid_json", ""))[:1000]
                     checkpoint = _build_recovery_checkpoint(
@@ -216,7 +225,7 @@ def run_investigation(
                         "is_error": True,
                     })
                     continue
-                if call.name == "propose_conclusion":
+                if tool_name == "propose_conclusion":
                     if proposal_call is None:
                         proposal_call, proposal = call, dict(call.input)
                     else:
@@ -238,46 +247,57 @@ def run_investigation(
                 ledger_step_id = None
                 if ledger is not None:
                     ledger_step_id = ledger.plan(
-                        tool=call.name,
+                        tool=tool_name,
                         target=tool_input,
                         decision=decision,
                     )
 
-                key = _tool_key(call.name, tool_input)
+                key = _tool_key(tool_name, tool_input)
                 repeats[key] += 1
 
-                cached_source = None
-                if call.name == "read_function_source":
-                    function_id = canonical_function_id(
-                        tool_input.get("function_id")
-                    )
-                    cached_source = state.read_functions.get(function_id)
-
-                cached_replay = _cached_source_replay(
-                    key,
-                    cached_source,
-                    replayed_cache_keys,
-                )
-
-                if cached_replay is not None:
-                    result = cached_replay
-                elif cached_source is not None:
-                    # This identical source request has already received its
-                    # one cache replay. Do not return the same evidence again.
+                cached_source = verified_source_cache.get(key)
+                blocked_call = False
+                gate_question = str(decision.get("question_to_resolve", "")).strip()
+                if no_progress_steps >= no_progress_prompt_after and not gate_question:
+                    blocked_call = True
+                    result = {
+                        "status": "TOOL_ERROR",
+                        "error": "Causal-progress gate requires a specific decision.question_to_resolve after unproductive turns.",
+                        "continuation_instruction": "Select one unresolved causal question from the checkpoint and state it in decision.question_to_resolve before choosing the next tool action.",
+                    }
+                elif (
+                    no_progress_steps >= no_progress_prompt_after
+                    and repeats[key] > 1
+                    and not str(decision.get("backtrack_reason", "")).strip()
+                ):
+                    blocked_call = True
+                    result = {
+                        "status": "TOOL_ERROR",
+                        "error": "Causal-progress gate blocked an equivalent completed action without an explicit backtrack reason.",
+                        "continuation_instruction": "Use a different action for the unresolved question, or provide a specific backtrack_reason explaining why this equivalent action is necessary.",
+                    }
+                elif cached_source is not None and repeats[key] - 1 > repeated_tool_limit:
+                    blocked_call = True
                     result = {
                         "status": "TOOL_ERROR",
                         "error": (
-                            "Verified source was already returned from cache "
-                            "for this identical request."
+                            "Repeated identical tool request blocked after "
+                            f"{repeated_tool_limit} allowed replays."
                         ),
                         "continuation_instruction": (
-                            "Do not retry this request. Use the verified "
-                            "source and existing investigation evidence to "
-                            "investigate a different unresolved causal "
-                            "question, or propose a supported conclusion."
+                            "Do not repeat this exact request again. Use the "
+                            "verified source and existing investigation "
+                            "evidence to resolve a different outstanding "
+                            "causal question."
                         ),
                     }
+                elif cached_source is not None:
+                    result = _cached_source_replay(key, cached_source) or {
+                        "status": "TOOL_ERROR",
+                        "error": "Cached source failed verification; reread required.",
+                    }
                 elif repeats[key] > repeated_tool_limit:
+                    blocked_call = True
                     result = {
                         "status": "TOOL_ERROR",
                         "error": (
@@ -292,43 +312,80 @@ def run_investigation(
                         ),
                     }
                 else:
-                    result = _execute_tool(
-                        tools, call.name, tool_input, config
-                    )
+                    result = _execute_tool(tools, tool_name, tool_input, config)
                     if (
-                        call.name == "read_function_source"
+                        tool_name == "read_function_source"
                         and result.get("status") == "SOURCE_VERIFIED"
                     ):
                         state.read_functions[
                             canonical_function_id(result.get("function_id"))
                         ] = result
+                        verified_source_cache[key] = result
                         if memory is not None:
                             memory.remember_source(result)
 
-                evidence_fingerprint = _evidence_fingerprint(call.name, result)
-                if evidence_fingerprint is not None and evidence_fingerprint not in seen_evidence:
+                evidence_fingerprint = _meaningful_evidence_fingerprint(
+                    tool_name, tool_input, result, decision
+                )
+                new_evidence = (
+                    not blocked_call
+                    and not result.get("cache_hit")
+                    and evidence_fingerprint is not None
+                    and evidence_fingerprint not in seen_evidence
+                )
+                if new_evidence:
                     seen_evidence.add(evidence_fingerprint)
                     step_gained_new_evidence = True
 
                 state.tool_history.append(
-                    {"step": step_number, "tool": call.name, "input": tool_input, "result": result}
+                    {
+                        "step": step_number,
+                        "tool": tool_name,
+                        "input": tool_input,
+                        "decision": decision,
+                        "result": result,
+                        "repeated_action": repeats[key] > 1,
+                        "recovery_attempt": bool(
+                            decision.get("backtrack_reason") or no_progress_steps > 0
+                        ),
+                        "execution_status": (
+                            "BLOCKED" if blocked_call else
+                            "CACHED" if result.get("cache_hit") else
+                            "FAILED" if _is_tool_failure(result) else
+                            "EXECUTED"
+                        ),
+                        "new_evidence": new_evidence,
+                    }
                 )
 
                 if ledger is not None and ledger_step_id is not None:
-                    if repeats[key] > repeated_tool_limit:
+                    if blocked_call:
                         ledger_status = "BLOCKED"
                     elif "error" in result or result.get("status") in ("FAILED", "TOOL_ERROR"):
                         ledger_status = "FAILED"
+                    elif result.get("cache_hit"):
+                        ledger_status = "CACHED"
                     else:
                         ledger_status = "COMPLETED"
                     ledger.finish(
                         ledger_step_id,
                         status=ledger_status,
                         result=result,
+                        execution_status=(
+                            "BLOCKED" if blocked_call else
+                            "CACHED" if result.get("cache_hit") else
+                            "FAILED" if _is_tool_failure(result) else
+                            "EXECUTED"
+                        ),
+                        new_evidence=new_evidence,
+                        repeated_action=repeats[key] > 1,
+                        recovery_attempt=bool(
+                            decision.get("backtrack_reason") or no_progress_steps > 0
+                        ),
                     )
 
                 model_result = (
-                    compact_tool_result(call.name, result, config)
+                    compact_tool_result(tool_name, result, config)
                     if config.get("compact_tool_results", True)
                     else result
                 )
@@ -339,46 +396,27 @@ def run_investigation(
                     model_result = {
                         "tool_result": model_result,
                         "recovery_instruction": _tool_failure_recovery_instruction(
-                            call.name, result, checkpoint
+                            tool_name, result, checkpoint
                         ),
                         "recovery_checkpoint": checkpoint,
                     }
                 # Store bounded graph observations only against a function whose source
                 # has already been verified during this run. Do not persist conclusions.
                 memory_function_id = canonical_function_id(
-                    result.get("function_id") or call.input.get("function_id")
+                    result.get("function_id") or tool_input.get("function_id")
                 )
                 source_record = state.read_functions.get(memory_function_id)
-                if memory is not None and source_record and call.name != "read_function_source":
+                if memory is not None and source_record and tool_name != "read_function_source":
                     observation = json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)[:360]
                     memory.remember_source(
                         source_record,
                         evidence=[{
-                            "tool": call.name,
+                            "tool": tool_name,
                             "status": result.get("status", "UNKNOWN"),
                             "observation": observation,
                             "verified": False,
                         }],
                     )
-                extra_context = []
-                if context_builder is not None and memory_function_id:
-                    memory_context = context_builder.build(active_function_id=memory_function_id)
-                    if memory_context:
-                        extra_context.append(memory_context)
-                if ledger is not None:
-                    ledger_context = ledger.render_recent()
-                    if ledger_context:
-                        extra_context.append(ledger_context)
-
-                if extra_context:
-                    context_text = "\n\n".join(extra_context)
-                    if isinstance(model_result, str):
-                        model_result = model_result + "\n\n" + context_text
-                    else:
-                        model_result = {
-                            "tool_result": model_result,
-                            "investigation_context": context_text,
-                        }
                 ordinary_results.append(
                     {
                         "tool_use_id": call.id,
@@ -386,6 +424,40 @@ def run_investigation(
                         "is_error": "error" in result,
                     }
                 )
+
+            if ordinary_results:
+                context_checkpoint = _build_recovery_checkpoint(
+                    issue, anchor, state, repeats, "current_investigation_context",
+                    max_chars=int(config.get("investigation_context_max_chars", 6000)),
+                )
+                context_parts = [
+                    "CURRENT INVESTIGATION CONTEXT (structured evidence summary; full source is retained only in its original result):\n"
+                    + json.dumps(context_checkpoint, ensure_ascii=False, default=str)
+                ]
+                if context_builder is not None:
+                    function_ids = list(state.read_functions)
+                    memory_context = context_builder.build(
+                        active_function_id=function_ids[-1] if function_ids else None,
+                        related_function_ids=function_ids[:-1],
+                    )
+                    if memory_context:
+                        context_parts.append(memory_context)
+                if ledger is not None:
+                    ledger_context = ledger.render_recent()
+                    if ledger_context:
+                        context_parts.append(ledger_context)
+                last_result = ordinary_results[-1]
+                previous_content = last_result.get("content", "")
+                if isinstance(previous_content, dict):
+                    last_result["content"] = {
+                        **previous_content,
+                        "investigation_context": "\n\n".join(context_parts),
+                    }
+                else:
+                    last_result["content"] = {
+                        "tool_result": previous_content,
+                        "investigation_context": "\n\n".join(context_parts),
+                    }
 
             if proposal_call is None:
                 if step_gained_new_evidence:
@@ -509,6 +581,7 @@ def run_investigation(
         return _result(
             "BUDGET_EXCEEDED", state, reviewed, critic_rejections,
             budget_reason=error.reason,
+            budget_diagnostic=error.diagnostic,
         )
     except Exception as error:
         return _result(
@@ -583,11 +656,28 @@ def _build_recovery_checkpoint(
     def source_summary(source: Any) -> dict[str, Any]:
         if not isinstance(source, dict):
             return {"summary": short_json(source, 180)}
+        function = source.get("function") or {}
+        source_detail = source.get("source") or {}
         keys = (
-            "qualified_name", "function_name", "signature", "relative_path",
+            "function_id", "qualified_name", "function_name", "signature", "relative_path",
             "start_line", "end_line", "source_sha256", "status",
         )
-        return {key: source[key] for key in keys if key in source}
+        summary = {key: source[key] for key in keys if key in source}
+        for key in ("qualified_name", "signature", "relative_path"):
+            if key not in summary and function.get(key):
+                summary[key] = function[key]
+        if "start_line" not in summary:
+            summary["start_line"] = source_detail.get("start_line")
+        if "end_line" not in summary:
+            summary["end_line"] = source_detail.get("actual_end_line")
+        if source_detail.get("computed_content_hash"):
+            summary["source_hash"] = source_detail["computed_content_hash"]
+        if source_detail:
+            summary["hash_verified"] = (
+                source_detail.get("content_hash_matches") is True
+                and source_detail.get("expected_content_hash") == source_detail.get("computed_content_hash")
+            )
+        return summary
 
     def action_summary(action: Any) -> dict[str, Any]:
         if not isinstance(action, dict):
@@ -610,6 +700,9 @@ def _build_recovery_checkpoint(
             "step": action.get("step"),
             "tool": action.get("tool"),
             "input": short_json(action.get("input", {}), 260),
+            "decision": action.get("decision", {}),
+            "execution_status": action.get("execution_status"),
+            "new_evidence": action.get("new_evidence", False),
             "result": short_json(compact_result or result, 780),
         }
 
@@ -634,6 +727,49 @@ def _build_recovery_checkpoint(
 
     raw_history = getattr(state, "tool_history", []) or []
     recent_actions = [action_summary(item) for item in raw_history[-10:]]
+    completed_actions = []
+    completed_keys = set()
+    for action in raw_history:
+        if not isinstance(action, dict) or action.get("tool") == "propose_conclusion":
+            continue
+        key = _tool_key(str(action.get("tool", "")), action.get("input", {}))
+        if key in completed_keys:
+            continue
+        completed_keys.add(key)
+        completed_actions.append({
+            "tool": action.get("tool"),
+            "input": action.get("input", {}),
+            "execution_status": action.get("execution_status", "COMPLETED"),
+            "new_evidence": action.get("new_evidence", False),
+        })
+    completed_actions = completed_actions[-16:]
+    negative_results = []
+    for action in raw_history:
+        if not isinstance(action, dict):
+            continue
+        result = action.get("result") or {}
+        if not isinstance(result, dict) or action.get("execution_status") in {"FAILED", "BLOCKED", "CACHED"}:
+            continue
+        negative_keys = {
+            "find_callers": ("callers",),
+            "find_callees": ("project_callees", "external_callees"),
+            "find_spawned_workers": ("spawned_workers",),
+            "find_worker_launchers": ("launchers",),
+            "list_fields_read": ("fields",),
+            "find_field_writers": ("writers",),
+        }.get(action.get("tool"), ())
+        if negative_keys and all(not result.get(key) for key in negative_keys):
+            decision = action.get("decision") or {}
+            if decision.get("question_to_resolve"):
+                negative_results.append({
+                    "tool": action.get("tool"),
+                    "question": decision["question_to_resolve"],
+                    "status": result.get("status"),
+                })
+    hypotheses = [
+        action.get("input") for action in raw_history
+        if isinstance(action, dict) and action.get("tool") == "propose_conclusion"
+    ][-4:]
     repeated = [
         {"action": str(key)[:300], "count": count}
         for key, count in repeats.most_common(8)
@@ -648,11 +784,17 @@ def _build_recovery_checkpoint(
         "incident": incident,
         "verified_source_functions": verified_sources,
         "recent_tool_actions": recent_actions,
+        "completed_equivalent_actions": completed_actions,
         "repeated_actions": repeated,
+        "relevant_negative_results": negative_results[-8:],
+        "current_hypotheses": hypotheses,
+        "counterevidence_and_critic_feedback": list(getattr(state, "critic_feedback", []) or [])[-6:],
         "unresolved_questions": [
-            "Connect the verified state mutation to the observed error through relevant control-flow and synchronization evidence.",
-            "Confirm that the log's failing function and source anchor refer to the same incident path.",
-            "Separate verified causal evidence from hypotheses and decide whether the root cause is established.",
+            "Establish the log location and execution path, then verify the source of the reporting or observing function.",
+            "Verify the relevant observer/callee and identify reads and writes of the suspicious shared state.",
+            "Verify the state-changing function and inspect its caller or phase-transition trigger.",
+            "Inspect relevant locks, condition variables, waits, notifications, and joins; compare release, transition, and observation order with the lifecycle contract.",
+            "Record evidence supporting and contradicting the proposed mechanism; conclude only if the causal link is established.",
         ],
     }
 
@@ -771,6 +913,62 @@ def _evidence_fingerprint(tool_name: str, result: Any) -> str | None:
         return None
 
 
+def _meaningful_evidence_fingerprint(
+    tool_name: str,
+    tool_input: dict[str, Any],
+    result: Any,
+    decision: dict[str, Any],
+) -> str | None:
+    """Fingerprint only new source proof, relevant relationships, or scoped negative evidence."""
+    if not isinstance(result, dict) or _is_tool_failure(result) or result.get("cache_hit"):
+        return None
+
+    if tool_name == "read_function_source":
+        source = result.get("source") or {}
+        if (
+            result.get("status") != "SOURCE_VERIFIED"
+            or source.get("content_hash_matches") is not True
+            or not source.get("expected_content_hash")
+            or source.get("expected_content_hash") != source.get("computed_content_hash")
+        ):
+            return None
+        evidence = {
+            "kind": "verified_source",
+            "function_id": canonical_function_id(result.get("function_id")),
+            "source_hash": source.get("computed_content_hash"),
+            "relative_path": (result.get("function") or {}).get("relative_path"),
+            "start_line": source.get("start_line"),
+            "end_line": source.get("actual_end_line"),
+        }
+    else:
+        relationship_keys = {
+            "find_callers": ("callers",),
+            "find_callees": ("project_callees", "external_callees"),
+            "find_spawned_workers": ("spawned_workers",),
+            "find_worker_launchers": ("launchers",),
+            "list_fields_read": ("fields",),
+            "find_field_writers": ("writers",),
+        }.get(tool_name, ())
+        relationships = {}
+        for key in relationship_keys:
+            values = result.get(key) or []
+            relationships[key] = sorted(
+                (json.dumps(_stable_evidence_payload(value), ensure_ascii=False, sort_keys=True, default=str)
+                 for value in values),
+            )
+        if any(relationships.values()):
+            evidence = {"kind": "relationships", "tool": tool_name, "relationships": relationships}
+        elif decision.get("question_to_resolve") and result.get("status") == "OK":
+            evidence = {
+                "kind": "relevant_negative_result",
+                "tool": tool_name,
+                "input": _stable_evidence_payload(tool_input),
+            }
+        else:
+            return None
+    return json.dumps(evidence, ensure_ascii=False, sort_keys=True, default=str)
+
+
 def _tool_turn_fingerprint(tool_calls: Any) -> str:
     """Fingerprint a whole assistant tool-call turn, ignoring rationale metadata."""
     actions = []
@@ -800,7 +998,9 @@ def _no_progress_recovery_prompt(
     return (
         "INVESTIGATION CONTINUATION REQUIRED. " + reason + "\n"
         "Use the checkpoint as the authoritative record of work already completed. Do not repeat the same tool-call "
-        "sequence. Select a different tool or target that answers one outstanding causal question. Prioritize the "
+        "sequence or any equivalent completed action. The next tool call must include a decision.question_to_resolve "
+        "that directly matches an unresolved checkpoint question; do not make a generic exploratory call. Select a "
+        "different tool or target that answers one outstanding causal question. Prioritize the "
         "verified control/data-flow link between the mutation and the logged failure, synchronization/order evidence, "
         "and confirming that the log location and anchor match. A negative result is evidence only if it is relevant "
         "to a stated unresolved question. Propose a conclusion only if the causal chain is adequately supported. "
