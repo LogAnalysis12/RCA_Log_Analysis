@@ -66,14 +66,186 @@ def test_cached_source_and_unverified_source_do_not_count_as_progress():
             "content_hash_matches": True,
             "expected_content_hash": "hash-a",
             "computed_content_hash": "hash-a",
+            "matched_content_hash": "hash-a",
+            "hash_match_variant": "LF_NO_FINAL_NEWLINE",
+            "source_snapshot_id": "snapshot-a",
         },
     }
     assert _meaningful_evidence_fingerprint("read_function_source", {}, source_result, {})
     assert _meaningful_evidence_fingerprint(
         "read_function_source", {}, {**source_result, "cache_hit": True}, {},
     ) is None
-    source_result["source"]["computed_content_hash"] = "hash-b"
+    source_result["source"]["content_hash_matches"] = False
     assert _meaningful_evidence_fingerprint("read_function_source", {}, source_result, {}) is None
+
+
+def test_lf_final_newline_source_has_valid_progress_fingerprint():
+    result = {
+        "status": "SOURCE_VERIFIED",
+        "function_id": "f1",
+        "function": {"relative_path": "src/a.cpp"},
+        "source": {
+            "content_hash_matches": True,
+            "expected_content_hash": "final-newline-hash",
+            "computed_content_hash": "no-final-newline-hash",
+            "matched_content_hash": "final-newline-hash",
+            "hash_match_variant": "LF_FINAL_NEWLINE",
+            "source_snapshot_id": "snapshot-a",
+            "start_line": 5,
+            "actual_end_line": 8,
+        },
+    }
+
+    fingerprint = _meaningful_evidence_fingerprint(
+        "read_function_source", {}, result, {}
+    )
+
+    assert fingerprint is not None
+    assert "final-newline-hash" in fingerprint
+    assert "LF_FINAL_NEWLINE" in fingerprint
+    assert "snapshot-a" in fingerprint
+
+
+def test_unverified_and_integrity_error_sources_never_count_as_progress():
+    result = {
+        "status": "SOURCE_VERIFIED",
+        "function_id": "f1",
+        "function": {"relative_path": "src/a.cpp"},
+        "source": {
+            "content_hash_matches": True,
+            "expected_content_hash": "hash-a",
+            "matched_content_hash": "hash-a",
+            "hash_match_variant": "LF_NO_FINAL_NEWLINE",
+            "source_snapshot_id": "snapshot-a",
+        },
+    }
+
+    for status in (
+        "SOURCE_READ_UNVERIFIED",
+        "SOURCE_HASH_MISMATCH",
+        "CACHE_INTEGRITY_ERROR",
+    ):
+        failed_result = {**result, "status": status, "error": "not verified"}
+        assert _meaningful_evidence_fingerprint(
+            "read_function_source", {}, failed_result, {}
+        ) is None
+
+
+def test_changed_verified_source_snapshot_is_new_evidence():
+    result = {
+        "status": "SOURCE_VERIFIED",
+        "function_id": "f1",
+        "function": {"relative_path": "src/a.cpp"},
+        "source": {
+            "content_hash_matches": True,
+            "expected_content_hash": "hash-a",
+            "computed_content_hash": "hash-a",
+            "matched_content_hash": "hash-a",
+            "hash_match_variant": "LF_NO_FINAL_NEWLINE",
+            "source_snapshot_id": "snapshot-a",
+            "start_line": 5,
+            "actual_end_line": 8,
+        },
+    }
+    original = _meaningful_evidence_fingerprint(
+        "read_function_source", {}, result, {}
+    )
+    changed = {
+        **result,
+        "source": {**result["source"], "source_snapshot_id": "snapshot-b"},
+    }
+
+    assert _meaningful_evidence_fingerprint(
+        "read_function_source", {}, changed, {}
+    ) != original
+
+
+def test_investigation_progress_resets_for_first_source_but_not_cache_replay():
+    class Tools:
+        def find_callers(self, function_id, limit):
+            return {"status": "OK", "caller_count": 0, "callers": []}
+
+        def read_function_source(self, function_id):
+            return {
+                "status": "SOURCE_VERIFIED",
+                "function_id": function_id,
+                "function": {"relative_path": "src/a.cpp"},
+                "source": {
+                    "content_hash_matches": True,
+                    "expected_content_hash": "hash-a",
+                    "computed_content_hash": "hash-a",
+                    "matched_content_hash": "hash-a",
+                    "hash_match_variant": "LF_NO_FINAL_NEWLINE",
+                    "source_snapshot_id": "snapshot-a",
+                    "start_line": 1,
+                    "actual_end_line": 2,
+                    "numbered_source": "1 | a\n2 | b",
+                },
+            }
+
+        def find_callees(self, function_id, limit):
+            return {"status": "OK", "project_callees": [], "external_callees": []}
+
+    class Backend:
+        response_count = 0
+
+        def send(self, content):
+            return StepResult(tool_calls=[
+                ToolCall("a", "find_callers", {"function_id": "f1"})
+            ])
+
+        def send_tool_results(self, results):
+            self.response_count += 1
+            if self.response_count == 1:
+                return StepResult(tool_calls=[ToolCall(
+                        "b", "read_function_source", {
+                            "function_id": "f1",
+                                "decision": {
+                                    "question_to_resolve": "Verify source for f1",
+                                    "backtrack_reason": "Validate the source cache",
+                                },
+                        }
+                )])
+            if self.response_count == 2:
+                return StepResult(tool_calls=[ToolCall(
+                    "c", "find_callees", {"function_id": "f1"}
+                )])
+            if self.response_count == 3:
+                return StepResult(tool_calls=[ToolCall(
+                    "d", "read_function_source", {
+                        "function_id": "f1",
+                        "decision": {
+                            "question_to_resolve": "Replay cached source",
+                            "backtrack_reason": "Validate the source cache",
+                        },
+                    }
+                )])
+            return StepResult(tool_calls=[ToolCall(
+                "e", "find_callers", {"function_id": "f2"}
+            )])
+
+    backend = Backend()
+    result = run_investigation(
+        {"anchor_resolution": {"selected_function": {"function_id": "f1"}}},
+        Tools(),
+        lambda **kwargs: backend,
+        max_steps=5,
+        repeated_tool_limit=3,
+        runtime_config={
+            "function_memory_enabled": False,
+            "investigation_ledger_enabled": False,
+            "no_progress_prompt_after": 1,
+            "compact_tool_results": False,
+        },
+    )
+
+    history = result["state"]["tool_history"]
+    assert history[1]["new_evidence"] is True
+    assert history[2]["execution_status"] == "EXECUTED"
+    assert history[3]["result"]["cache_hit"] is True
+    assert history[3]["new_evidence"] is False
+    assert history[4]["execution_status"] == "BLOCKED"
+    assert "Causal-progress gate" in history[4]["result"]["error"]
 
 
 def test_tool_turn_fingerprint_ignores_decision_rationale():

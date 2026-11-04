@@ -37,6 +37,7 @@ class InvestigationState:
         "input_tokens": 0, "output_tokens": 0, "total_tokens": 0
     })
     critic_feedback: list[str] = field(default_factory=list)
+    causal_frontier: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

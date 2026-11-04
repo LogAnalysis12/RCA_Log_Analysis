@@ -121,6 +121,34 @@ class InvestigationLedger:
             ),
         })
 
+    def record_frontier(self, frontier: dict[str, Any]) -> None:
+        self._append({
+            "event": "frontier_snapshot",
+            "frontier": frontier,
+        })
+
+    def recover_frontier(self) -> dict[str, Any] | None:
+        """Return this run's latest frontier snapshot, if one was recorded."""
+        if not self.path.exists():
+            return None
+        latest = None
+        try:
+            with self.path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if (
+                        event.get("run_id") == self.run_id
+                        and event.get("event") == "frontier_snapshot"
+                        and isinstance(event.get("frontier"), dict)
+                    ):
+                        latest = event["frontier"]
+        except OSError:
+            return None
+        return latest
+
     def render_recent(self) -> str:
         if not self._events:
             return ""

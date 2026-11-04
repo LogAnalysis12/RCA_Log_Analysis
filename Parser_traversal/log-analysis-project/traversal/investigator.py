@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable
@@ -14,6 +15,7 @@ from traversal.compact_results import (
 )
 from traversal.critic import run_critic
 from traversal.function_memory import ContextBuilder, FunctionUnderstandingMemory
+from traversal.frontier import CausalFrontier, QuestionStatus, expand_s7_frontier
 from traversal.investigation_ledger import InvestigationLedger
 from traversal.prompts import INVESTIGATOR_SYSTEM
 from traversal.schemas import InvestigationState
@@ -47,13 +49,15 @@ def _cached_source_replay(
         or not isinstance(source, dict)
         or source.get("content_hash_matches") is not True
         or not source.get("expected_content_hash")
-        or not source.get("computed_content_hash")
-        or source.get("expected_content_hash") != source.get("computed_content_hash")
+        or not source.get("matched_content_hash")
+        or source.get("expected_content_hash")
+        != source.get("matched_content_hash")
+        or not source.get("hash_match_variant")
+        or not source.get("source_snapshot_id")
     ):
         return None
 
     replay_source = dict(source)
-    replay_source.pop("numbered_source", None)
     return {
         **cached_source,
         "source": replay_source,
@@ -125,13 +129,26 @@ def run_investigation(
     if config.get("investigation_ledger_enabled", True):
         ledger = InvestigationLedger(
             config.get("investigation_ledger_path", "output/investigation_ledger.jsonl"),
+            run_id=config.get("investigation_run_id"),
             max_summary_chars=int(config.get("investigation_ledger_summary_chars", 4000)),
             recent_events=int(config.get("investigation_ledger_recent_events", 12)),
         )
 
+    frontier = CausalFrontier.from_dict(config.get("frontier_state"))
+    if config.get("resume_frontier") and ledger is not None:
+        recovered_frontier = ledger.recover_frontier()
+        if recovered_frontier is not None:
+            frontier = CausalFrontier.from_dict(recovered_frontier)
+    state.causal_frontier = frontier.to_dict()
+    if ledger is not None:
+        ledger.record_frontier(state.causal_frontier)
+
     backend = backend_factory(system_prompt=INVESTIGATOR_SYSTEM, tools=TOOLS)
     repeats: Counter[str] = Counter()
     verified_source_cache: dict[str, dict[str, Any]] = {}
+    integrity_rereads: set[str] = set()
+    integrity_reread_failures: set[str] = set()
+    completed_tool_cache: dict[str, dict[str, Any]] = {}
     reviewed: dict[str, frozenset[str]] = {}
     critic_rejections = 0
     stalls = 0
@@ -140,6 +157,167 @@ def run_investigation(
     no_progress_steps = 0
     no_progress_limit = max(2, int(config.get("no_progress_limit", 5)))
     no_progress_prompt_after = max(1, int(config.get("no_progress_prompt_after", 2)))
+
+    def persist_frontier() -> None:
+        state.causal_frontier = frontier.to_dict()
+        if ledger is not None:
+            ledger.record_frontier(state.causal_frontier)
+
+    def frontier_evidence_ref(tool_name: str, tool_input: dict[str, Any], result: dict[str, Any]) -> str:
+        payload = json.dumps(
+            {"tool": tool_name, "input": tool_input, "result": result},
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+        return f"evidence:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
+
+    def activate_s7_path_after_gate() -> None:
+        for question in list(frontier.questions.values()):
+            if question.kind != "sibling_worker_gate" or question.status == QuestionStatus.CLOSED:
+                continue
+            if not frontier.close_aggregate(question.question_id):
+                continue
+            for worker_id, priority, label, kind in (
+                (
+                    question.arguments.get("t6_function_id", "runT6"),
+                    110,
+                    "Trace the priority T6 transport path.",
+                    "trace_runT6_callees",
+                ),
+                (
+                    question.arguments.get("observer_function_id", "runT2"),
+                    85,
+                    "Trace the observer path from runT2.",
+                    "trace_runT2_callees",
+                ),
+            ):
+                frontier.add(
+                    kind=kind,
+                    question=label,
+                    tool="find_callees",
+                    arguments={"function_id": worker_id},
+                    dependencies=[question.question_id],
+                    priority=priority,
+                )
+            persist_frontier()
+
+    def record_frontier_result(
+        tool_name: str,
+        tool_input: dict[str, Any],
+        result: dict[str, Any],
+    ) -> bool:
+        question = frontier.matching(tool_name, tool_input)
+        closed = False
+        if question is not None and question.status != QuestionStatus.CLOSED:
+            closed = frontier.complete(
+                question.question_id,
+                result,
+                frontier_evidence_ref(tool_name, tool_input, result),
+            )
+        expand_s7_frontier(
+            frontier,
+            tool=tool_name,
+            arguments=tool_input,
+            result=result,
+            evidence_ref=frontier_evidence_ref(tool_name, tool_input, result),
+        )
+        activate_s7_path_after_gate()
+        persist_frontier()
+        return closed
+
+    def sibling_gate_pending() -> bool:
+        return any(
+            question.kind == "sibling_worker_gate"
+            and question.status != QuestionStatus.CLOSED
+            for question in frontier.questions.values()
+        )
+
+    def dispatch_ready_frontier(step_number: int) -> list[dict[str, Any]]:
+        dispatched: list[dict[str, Any]] = []
+        maximum_tasks = max(1, int(config.get("max_frontier_dispatches", 100)))
+        while len(dispatched) < maximum_tasks:
+            ready = frontier.ready()
+            if not ready:
+                break
+            question = ready[0]
+            tool_name = str(question.tool)
+            tool_input = dict(question.arguments)
+            key = _tool_key(tool_name, tool_input)
+            question.status = QuestionStatus.IN_PROGRESS
+            persist_frontier()
+
+            cached = (
+                verified_source_cache.get(key)
+                if tool_name == "read_function_source"
+                else completed_tool_cache.get(key)
+            )
+            if tool_name == "read_function_source" and cached is not None:
+                result = _cached_source_replay(key, cached)
+            elif cached is not None:
+                result = {**cached, "cache_hit": True}
+            else:
+                result = _execute_tool(tools, tool_name, tool_input, config)
+
+            if not isinstance(result, dict):
+                result = {"status": "TOOL_ERROR", "error": "Tool returned a non-object result."}
+            if tool_name == "read_function_source" and result.get("status") == "SOURCE_VERIFIED":
+                state.read_functions[canonical_function_id(result.get("function_id"))] = result
+                verified_source_cache[key] = result
+                if memory is not None:
+                    memory.remember_source(result)
+            elif result.get("status") == "OK" and "error" not in result:
+                completed_tool_cache[key] = result
+
+            evidence_fingerprint = _meaningful_evidence_fingerprint(
+                tool_name, tool_input, result,
+                {"question_to_resolve": question.question},
+            )
+            new_evidence = (
+                not result.get("cache_hit")
+                and evidence_fingerprint is not None
+                and evidence_fingerprint not in seen_evidence
+            )
+            if new_evidence:
+                seen_evidence.add(evidence_fingerprint)
+
+            ledger_step_id = ledger.plan(
+                tool=tool_name,
+                target=tool_input,
+                decision={"question_to_resolve": question.question},
+            ) if ledger is not None else None
+            state.tool_history.append({
+                "step": step_number,
+                "tool": tool_name,
+                "input": tool_input,
+                "decision": {"frontier_question_id": question.question_id},
+                "frontier_question_id": question.question_id,
+                "result": result,
+                "repeated_action": False,
+                "execution_status": "CACHED" if result.get("cache_hit") else "EXECUTED",
+                "new_evidence": new_evidence,
+            })
+            if ledger is not None and ledger_step_id is not None:
+                ledger.finish(
+                    ledger_step_id,
+                    status="CACHED" if result.get("cache_hit") else "COMPLETED",
+                    result=result,
+                    execution_status="CACHED" if result.get("cache_hit") else "EXECUTED",
+                    new_evidence=new_evidence,
+                    repeated_action=False,
+                )
+
+            question_closed = record_frontier_result(tool_name, tool_input, result)
+            state.tool_history[-1]["question_closed"] = question_closed
+            dispatched.append({
+                "question_id": question.question_id,
+                "tool": tool_name,
+                "arguments": tool_input,
+                "status": result.get("status"),
+                "new_evidence": new_evidence,
+                "question_closed": question_closed,
+            })
+        return dispatched
 
     initial = {
         "error_cluster": {
@@ -256,9 +434,72 @@ def run_investigation(
                 repeats[key] += 1
 
                 cached_source = verified_source_cache.get(key)
+                cached_replay = (
+                    _cached_source_replay(key, cached_source)
+                    if cached_source is not None
+                    else None
+                )
+                cache_integrity_mismatch = (
+                    cached_source is not None and cached_replay is None
+                )
                 blocked_call = False
                 gate_question = str(decision.get("question_to_resolve", "")).strip()
-                if no_progress_steps >= no_progress_prompt_after and not gate_question:
+                if tool_name == "find_callers" and sibling_gate_pending():
+                    blocked_call = True
+                    result = {
+                        "status": "FRONTIER_GATE_BLOCKED",
+                        "error": (
+                            "Caller traversal is blocked until every required "
+                            "spawned sibling worker has verified source."
+                        ),
+                        "open_frontier_questions": [
+                            item.question_id for item in frontier.questions.values()
+                            if item.status != QuestionStatus.CLOSED
+                        ],
+                    }
+                elif key in integrity_reread_failures:
+                    blocked_call = True
+                    result = {
+                        "status": "CACHE_INTEGRITY_ERROR",
+                        "error": (
+                            "The automatic source reread already failed for "
+                            "this request; further reads are blocked."
+                        ),
+                    }
+                elif cache_integrity_mismatch and key not in integrity_rereads:
+                    integrity_rereads.add(key)
+                    verified_source_cache.pop(key, None)
+                    result = _execute_tool(tools, tool_name, tool_input, config)
+                    if result.get("status") == "SOURCE_VERIFIED":
+                        state.read_functions[
+                            canonical_function_id(result.get("function_id"))
+                        ] = result
+                        verified_source_cache[key] = result
+                        if memory is not None:
+                            memory.remember_source(result)
+                    else:
+                        integrity_reread_failures.add(key)
+                        result = {
+                            "status": "CACHE_INTEGRITY_ERROR",
+                            "error": (
+                                "Cached source failed integrity verification; "
+                                "the single automatic reread did not produce "
+                                "verified source."
+                            ),
+                            "reread_result": result,
+                        }
+                elif cache_integrity_mismatch:
+                    blocked_call = True
+                    result = {
+                        "status": "CACHE_INTEGRITY_ERROR",
+                        "error": (
+                            "Cached source failed integrity verification "
+                            "after the single automatic reread."
+                        ),
+                    }
+                elif tool_name != "read_function_source" and key in completed_tool_cache:
+                    result = {**completed_tool_cache[key], "cache_hit": True}
+                elif no_progress_steps >= no_progress_prompt_after and not gate_question:
                     blocked_call = True
                     result = {
                         "status": "TOOL_ERROR",
@@ -292,10 +533,7 @@ def run_investigation(
                         ),
                     }
                 elif cached_source is not None:
-                    result = _cached_source_replay(key, cached_source) or {
-                        "status": "TOOL_ERROR",
-                        "error": "Cached source failed verification; reread required.",
-                    }
+                    result = cached_replay
                 elif repeats[key] > repeated_tool_limit:
                     blocked_call = True
                     result = {
@@ -323,6 +561,8 @@ def run_investigation(
                         verified_source_cache[key] = result
                         if memory is not None:
                             memory.remember_source(result)
+                    elif result.get("status") == "OK" and "error" not in result:
+                        completed_tool_cache[key] = result
 
                 evidence_fingerprint = _meaningful_evidence_fingerprint(
                     tool_name, tool_input, result, decision
@@ -424,6 +664,22 @@ def run_investigation(
                         "is_error": "error" in result,
                     }
                 )
+
+                question_closed = record_frontier_result(tool_name, tool_input, result)
+                step_gained_new_evidence = step_gained_new_evidence or question_closed
+                automatic_results = dispatch_ready_frontier(step_number)
+                if automatic_results:
+                    step_gained_new_evidence = step_gained_new_evidence or any(
+                        item["new_evidence"] or item["question_closed"]
+                        for item in automatic_results
+                    )
+                    last_content = ordinary_results[-1]["content"]
+                    if not isinstance(last_content, dict):
+                        last_content = {"tool_result": last_content}
+                    ordinary_results[-1]["content"] = {
+                        **last_content,
+                        "deterministic_frontier_dispatch": automatic_results,
+                    }
 
             if ordinary_results:
                 context_checkpoint = _build_recovery_checkpoint(
@@ -789,6 +1045,7 @@ def _build_recovery_checkpoint(
         "relevant_negative_results": negative_results[-8:],
         "current_hypotheses": hypotheses,
         "counterevidence_and_critic_feedback": list(getattr(state, "critic_feedback", []) or [])[-6:],
+        "causal_frontier": getattr(state, "causal_frontier", {}),
         "unresolved_questions": [
             "Establish the log location and execution path, then verify the source of the reporting or observing function.",
             "Verify the relevant observer/callee and identify reads and writes of the suspicious shared state.",
@@ -929,13 +1186,20 @@ def _meaningful_evidence_fingerprint(
             result.get("status") != "SOURCE_VERIFIED"
             or source.get("content_hash_matches") is not True
             or not source.get("expected_content_hash")
-            or source.get("expected_content_hash") != source.get("computed_content_hash")
+            or not source.get("matched_content_hash")
+            or source.get("expected_content_hash")
+            != source.get("matched_content_hash")
+            or not source.get("hash_match_variant")
+            or not source.get("source_snapshot_id")
         ):
             return None
         evidence = {
             "kind": "verified_source",
             "function_id": canonical_function_id(result.get("function_id")),
-            "source_hash": source.get("computed_content_hash"),
+            "expected_content_hash": source.get("expected_content_hash"),
+            "matched_content_hash": source.get("matched_content_hash"),
+            "hash_match_variant": source.get("hash_match_variant"),
+            "source_snapshot_id": source.get("source_snapshot_id"),
             "relative_path": (result.get("function") or {}).get("relative_path"),
             "start_line": source.get("start_line"),
             "end_line": source.get("actual_end_line"),

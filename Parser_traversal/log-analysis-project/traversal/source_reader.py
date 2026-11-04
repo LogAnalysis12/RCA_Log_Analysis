@@ -23,8 +23,10 @@ class SourceReadResult:
     numbered_source: str
     expected_content_hash: str
     computed_content_hash: str
+    matched_content_hash: str
     content_hash_matches: bool | None
     hash_match_variant: str
+    source_snapshot_id: str
     file_exists: bool
     source_available: bool
     warnings: list[str]
@@ -150,19 +152,15 @@ def read_source_range(
             f"Source path is not a file: {source_path}"
         )
 
+    raw_source = source_path.read_bytes()
+    source_snapshot_id = hashlib.sha256(raw_source).hexdigest()
     try:
-        text = source_path.read_text(
-            encoding="utf-8-sig",
-            errors="strict",
-        )
+        text = raw_source.decode("utf-8-sig", errors="strict")
     except UnicodeDecodeError:
         warnings.append(
             "File was not valid UTF-8; decoded using Windows cp1252."
         )
-        text = source_path.read_text(
-            encoding="cp1252",
-            errors="replace",
-        )
+        text = raw_source.decode("cp1252", errors="replace")
 
     all_lines = text.splitlines()
     total_lines = len(all_lines)
@@ -198,6 +196,7 @@ def read_source_range(
 
     content_hash_matches: bool | None
     hash_match_variant = ""
+    matched_content_hash = ""
 
     if expected_hash:
         matching_variants = [
@@ -212,6 +211,8 @@ def read_source_range(
             if matching_variants
             else "NO_SUPPORTED_VARIANT_MATCHED"
         )
+        if matching_variants:
+            matched_content_hash = hash_variants[hash_match_variant]
 
         if not content_hash_matches:
             warnings.append(
@@ -241,8 +242,10 @@ def read_source_range(
         computed_content_hash=hash_variants[
             "LF_NO_FINAL_NEWLINE"
         ],
+        matched_content_hash=matched_content_hash,
         content_hash_matches=content_hash_matches,
         hash_match_variant=hash_match_variant,
+        source_snapshot_id=source_snapshot_id,
         file_exists=True,
         source_available=True,
         warnings=warnings,

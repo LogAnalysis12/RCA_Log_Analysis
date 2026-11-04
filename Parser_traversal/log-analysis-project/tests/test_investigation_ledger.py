@@ -110,3 +110,16 @@ def test_missing_rationale_is_safe(tmp_path):
 
     assert step_id == 1
     assert "not supplied" in ledger.render_recent()
+
+
+def test_frontier_snapshot_recovers_latest_state_for_same_run(tmp_path):
+    path = tmp_path / "ledger.jsonl"
+    first = InvestigationLedger(path, run_id="resume-run")
+    first.record_frontier({"version": 1, "questions": [{"question_id": "q1"}]})
+    first.record_frontier({"version": 1, "questions": [{"question_id": "q2"}]})
+
+    recovered = InvestigationLedger(path, run_id="resume-run").recover_frontier()
+    other_run = InvestigationLedger(path, run_id="different-run").recover_frontier()
+
+    assert recovered == {"version": 1, "questions": [{"question_id": "q2"}]}
+    assert other_run is None
